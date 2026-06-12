@@ -6,7 +6,6 @@ import { Configuration as WebpackDevServerConfiguration } from 'webpack-dev-serv
 import { ConsoleRemotePlugin } from '@openshift-console/dynamic-plugin-sdk-webpack';
 
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -32,7 +31,14 @@ const config: Configuration = {
       {
         test: /\.(jsx?|tsx?)$/,
         exclude: /\/node_modules\//,
-        use: ['swc-loader'],
+        use: [
+          {
+            loader: 'ts-loader',
+            options: {
+              configFile: path.resolve(__dirname, 'tsconfig.json'),
+            },
+          },
+        ],
       },
       {
         test: /\.(css)$/,
@@ -69,11 +75,6 @@ const config: Configuration = {
   },
   plugins: [
     new ConsoleRemotePlugin(),
-    new ForkTsCheckerWebpackPlugin({
-      typescript: {
-        configFile: path.resolve(__dirname, 'tsconfig.json'),
-      },
-    }),
     new CopyWebpackPlugin({
       patterns: [{ from: path.resolve(__dirname, 'locales'), to: 'locales' }],
     }),

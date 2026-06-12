@@ -19,7 +19,7 @@ import {
   PageSection,
 } from '@patternfly/react-core';
 import type { FC } from 'react';
-import { useParams } from 'react-router';
+import { useParams } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import { useRuntimeClasses, usePeerPodIndex } from '../k8s/hooks';
 import { DeploymentGVK, PodGVK } from '../k8s/resources';
