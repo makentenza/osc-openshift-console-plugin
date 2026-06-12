@@ -1,7 +1,24 @@
-# OpenShift console plugin template
+# OpenShift Sandboxed Containers console plugin (`osc-plugin`)
 
-This project is a minimal template for writing a new OpenShift Console dynamic
-plugin.
+An OpenShift Console dynamic plugin that adds a **Sandboxes** menu for managing and
+observing [OpenShift sandboxed containers](https://github.com/openshift/sandboxed-containers-operator)
+workloads — both on-node Kata microVMs (`kata`) and peer pods (`kata-remote`).
+
+Features:
+
+- **Overview** — KataConfig install health, cloud-api-adaptor status, runtime classes, and
+  workload counts split by isolation type.
+- **Workloads** — every Pod/Deployment using a kata runtime class, with an isolation badge
+  (on-node vs peer pod), status, and placement (node name, or the backing cloud VM
+  `instanceID` resolved from the `PeerPod` CR). Create and delete from here.
+- **Create wizard** — choose a runtime class (cards describing each isolation type), build a
+  Pod or Deployment, with a peer-pod machine-type override and a manifest preview.
+- **Workload detail** — isolation, backing infrastructure, and live CPU/memory metrics.
+- **Runtime classes** — reference view of the kata runtime classes and peer-pod defaults.
+
+The whole menu is gated behind a feature flag on the `KataConfig` CRD, so it only appears
+when OSC is installed. It was generated from the OpenShift Console dynamic plugin template
+described below.
 
 [Openshift console plugins](https://github.com/openshift/console/tree/main/frontend/packages/console-dynamic-plugin-sdk)
 allow you to extend the [OpenShift web console](https://github.com/openshift/console)

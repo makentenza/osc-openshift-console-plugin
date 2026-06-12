@@ -1,20 +1,102 @@
 [
   {
-    "type": "console.page/route",
+    "type": "console.flag/model",
     "properties": {
-      "exact": true,
-      "path": "/example",
-      "component": { "$codeRef": "ExamplePage" }
+      "flag": "OSC_KATACONFIG",
+      "model": {
+        "group": "kataconfiguration.openshift.io",
+        "version": "v1",
+        "kind": "KataConfig"
+      }
     }
+  },
+  {
+    "type": "console.navigation/section",
+    "properties": {
+      "id": "sandboxes",
+      "perspective": "admin",
+      "name": "%plugin__osc-plugin~Sandboxes%",
+      "insertAfter": "workloads"
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
   },
   {
     "type": "console.navigation/href",
     "properties": {
-      "id": "example",
-      "name": "%plugin__osc-plugin~Plugin example%",
-      "href": "/example",
+      "id": "sandboxes-overview",
+      "section": "sandboxes",
+      "name": "%plugin__osc-plugin~Overview%",
+      "href": "/sandboxes",
+      "perspective": "admin"
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "sandboxes-workloads",
+      "section": "sandboxes",
+      "name": "%plugin__osc-plugin~Workloads%",
+      "href": "/sandboxes/workloads",
       "perspective": "admin",
-      "section": "home"
-    }
+      "startsWith": ["sandboxes/workloads"]
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
+      "id": "sandboxes-runtime-classes",
+      "section": "sandboxes",
+      "name": "%plugin__osc-plugin~Runtime classes%",
+      "href": "/sandboxes/runtime-classes",
+      "perspective": "admin"
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/sandboxes",
+      "component": { "$codeRef": "SandboxesOverview" }
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/sandboxes/workloads",
+      "component": { "$codeRef": "SandboxWorkloadsList" }
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/sandboxes/workloads/~new",
+      "component": { "$codeRef": "CreateSandboxWorkload" }
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/sandboxes/workloads/:kind/:ns/:name",
+      "component": { "$codeRef": "SandboxWorkloadDetail" }
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/sandboxes/runtime-classes",
+      "component": { "$codeRef": "RuntimeClassesList" }
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
   }
 ]

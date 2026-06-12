@@ -90,7 +90,11 @@
     "displayName": "OpenShift Sandboxed Containers",
     "description": "Management and observability for OpenShift sandboxed containers (Kata + peer pods).",
     "exposedModules": {
-      "ExamplePage": "./components/ExamplePage"
+      "SandboxesOverview": "./components/SandboxesOverview",
+      "SandboxWorkloadsList": "./components/SandboxWorkloadsList",
+      "CreateSandboxWorkload": "./components/CreateSandboxWorkload",
+      "SandboxWorkloadDetail": "./components/SandboxWorkloadDetail",
+      "RuntimeClassesList": "./components/RuntimeClassesList"
     },
     "dependencies": {
       "@console/pluginAPI": ">=4.22.0-0"

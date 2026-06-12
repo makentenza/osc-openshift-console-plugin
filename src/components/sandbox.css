@@ -1,0 +1,50 @@
+.osc-plugin__stat {
+  text-align: center;
+}
+
+.osc-plugin__stat-value {
+  font-size: var(--pf-t--global--font--size--2xl, 1.5rem);
+  font-weight: var(--pf-t--global--font--weight--body--bold, 700);
+}
+
+.osc-plugin__stat-label {
+  color: var(--pf-t--global--text--color--subtle);
+}
+
+.osc-plugin__mono {
+  font-family: var(--pf-t--global--font--family--mono, monospace);
+  font-size: var(--pf-t--global--font--size--sm, 0.875rem);
+}
+
+.osc-plugin__muted {
+  color: var(--pf-t--global--text--color--subtle);
+  font-size: var(--pf-t--global--font--size--sm, 0.875rem);
+}
+
+.osc-plugin__mt {
+  margin-block-start: var(--pf-t--global--spacer--md, 1rem);
+}
+
+.osc-plugin__mb {
+  margin-block-end: var(--pf-t--global--spacer--md, 1rem);
+}
+
+.osc-plugin__rc-card {
+  block-size: 100%;
+  cursor: pointer;
+}
+
+.osc-plugin__rc-selected {
+  outline: var(--pf-t--global--border--width--regular, 2px) solid
+    var(--pf-t--global--border--color--brand--default);
+}
+
+.osc-plugin__ns-list {
+  max-block-size: 18rem;
+  overflow-y: auto;
+}
+
+.osc-plugin__spark {
+  display: block;
+  margin-block-start: var(--pf-t--global--spacer--sm, 0.5rem);
+}

@@ -63,11 +63,9 @@ test.describe('Console plugin template test', () => {
     }
   });
 
-  test('Verify the example page title', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('[data-quickstart-id="qs-nav-home"]').click();
-    await page.getByTestId('nav').getByText('Plugin example').click();
-    await expect(page).toHaveURL(/\/example/);
-    await expect(page).toHaveTitle(/Hello, plugin!/);
+  test('Verify the Sandboxes overview page', async ({ page }) => {
+    await page.goto('/sandboxes');
+    await expect(page).toHaveURL(/\/sandboxes/);
+    await expect(page.getByText('Sandboxes overview')).toBeVisible();
   });
 });

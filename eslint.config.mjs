@@ -34,6 +34,14 @@ export default tseslint.config(
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
       '@typescript-eslint/consistent-type-imports': 'error',
+      // Defensive optional-chaining over live useK8sWatchResource data is intentional:
+      // the SDK types fields as defined, but they are undefined while a watch is loading.
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      // Numbers/booleans in template literals are fine for display strings.
+      '@typescript-eslint/restrict-template-expressions': [
+        'error',
+        { allowNumber: true, allowBoolean: true },
+      ],
     },
     languageOptions: {
       globals: globals.browser,
