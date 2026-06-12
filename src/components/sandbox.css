@@ -86,6 +86,22 @@
   block-size: 36rem;
 }
 
+/*
+ * ResourceYAMLEditor's internal wrappers render with zero height, so Monaco
+ * measures 5px at mount. Stretch them to fill our fixed-height wrapper.
+ * Both selectors are scoped under .osc-plugin__yaml, so they cannot affect
+ * console pages outside this plugin's YAML tab.
+ */
+/* stylelint-disable-next-line selector-disallowed-list */
+.osc-plugin__yaml .pf-v6-c-multiple-file-upload {
+  block-size: 100%;
+}
+
+/* stylelint-disable-next-line selector-disallowed-list */
+.osc-plugin__yaml .co-file-dropzone {
+  block-size: 100%;
+}
+
 .osc-plugin__breadcrumb-section {
   padding-block-end: 0;
 }
