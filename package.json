@@ -15,7 +15,7 @@
     "start": "yarn webpack serve --progress",
     "start-console": "./start-console.sh",
     "i18n": "./i18n-scripts/build-i18n.sh && node ./i18n-scripts/set-english-defaults.js",
-    "lint": "yarn eslint src integration-tests --fix && stylelint 'src/**/*.css' --allow-empty-input --fix",
+    "lint": "yarn eslint src --fix && stylelint 'src/**/*.css' --allow-empty-input --fix",
     "test-cypress": "cd integration-tests && cypress open",
     "test-cypress-headless": "cd integration-tests && node --max-old-space-size=4096 ../node_modules/.bin/cypress run --browser ${BRIDGE_E2E_BROWSER_NAME:-electron}",
     "cypress-merge": "mochawesome-merge ./integration-tests/screenshots/cypress_report*.json > ./integration-tests/screenshots/cypress.json",

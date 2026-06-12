@@ -40,7 +40,7 @@ import './sandbox.css';
 
 const MACHINE_TYPE_ANNOTATION = 'io.katacontainers.config.hypervisor.machine_type';
 
-interface Form {
+interface WorkloadForm {
   kind: 'Pod' | 'Deployment';
   name: string;
   namespace: string;
@@ -54,7 +54,7 @@ interface Form {
 }
 
 const buildManifest = (
-  f: Form,
+  f: WorkloadForm,
   isPeerPod: boolean,
 ): K8sResourceCommon & Record<string, unknown> => {
   const container: Record<string, unknown> = {
@@ -111,7 +111,7 @@ const CreateSandboxWorkload: FC = () => {
   });
   const sandboxRCs = useMemo(() => runtimeClasses.filter(isSandboxRuntimeClass), [runtimeClasses]);
 
-  const [form, setForm] = useState<Form>({
+  const [form, setForm] = useState<WorkloadForm>({
     kind: 'Pod',
     name: 'my-sandbox',
     namespace: 'default',
@@ -126,7 +126,7 @@ const CreateSandboxWorkload: FC = () => {
   const [nsOpen, setNsOpen] = useState(false);
   const [error, setError] = useState<string>();
 
-  const set = (patch: Partial<Form>) => {
+  const set = (patch: Partial<WorkloadForm>) => {
     setForm((f) => ({ ...f, ...patch }));
   };
   const selectedRC: RuntimeClassKind | undefined = sandboxRCs.find(
