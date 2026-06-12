@@ -23,12 +23,14 @@ import {
   Select,
   SelectList,
   SelectOption,
+  Skeleton,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core';
 import { EllipsisVIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
+import type { ISortBy, OnSort } from '@patternfly/react-table';
 import type { FC } from 'react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom-v5-compat';
@@ -45,6 +47,24 @@ const statusColor = (status: string): 'green' | 'orange' | 'red' | 'grey' => {
   if (['Failed', 'Error', 'CrashLoopBackOff'].includes(status)) return 'red';
   return 'grey';
 };
+
+const statusCategory = (status: string): string => {
+  if (['Running', 'Available', 'Succeeded'].includes(status)) return 'Healthy';
+  if (['Pending', 'Progressing', 'ContainerCreating'].includes(status)) return 'Pending';
+  if (['Failed', 'Error', 'CrashLoopBackOff'].includes(status)) return 'Error';
+  return 'Other';
+};
+
+const SORTABLE_FIELDS: (keyof SandboxWorkload | null)[] = [
+  'name',
+  'namespace',
+  'kind',
+  null,
+  null,
+  'status',
+  null,
+  'creationTimestamp',
+];
 
 const detailPath = (w: SandboxWorkload) =>
   `/sandboxes/workloads/${w.kind}/${w.namespace}/${w.name}`;
@@ -90,6 +110,31 @@ const RowActions: FC<{ w: SandboxWorkload; onDelete: (w: SandboxWorkload) => voi
   );
 };
 
+const SkeletonTable: FC = () => (
+  <Table aria-label="Loading" variant="compact">
+    <Thead>
+      <Tr>
+        {Array.from({ length: 9 }, (_, i) => (
+          <Th key={i}>
+            <Skeleton width="5rem" />
+          </Th>
+        ))}
+      </Tr>
+    </Thead>
+    <Tbody>
+      {Array.from({ length: 5 }, (_, i) => (
+        <Tr key={i}>
+          {Array.from({ length: 9 }, (_, j) => (
+            <Td key={j}>
+              <Skeleton width={j === 0 ? '10rem' : '6rem'} />
+            </Td>
+          ))}
+        </Tr>
+      ))}
+    </Tbody>
+  </Table>
+);
+
 const SandboxWorkloadsList: FC = () => {
   const { t } = useTranslation('plugin__osc-plugin');
   const { workloads, loaded } = useSandboxWorkloads();
@@ -97,19 +142,45 @@ const SandboxWorkloadsList: FC = () => {
   const [text, setText] = useState('');
   const [isolation, setIsolation] = useState<string>('All');
   const [isoOpen, setIsoOpen] = useState(false);
+  const [nsFilter, setNsFilter] = useState<string>('All');
+  const [nsOpen, setNsOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<ISortBy>({});
   const [toDelete, setToDelete] = useState<SandboxWorkload | undefined>();
   const [deleting, setDeleting] = useState(false);
 
-  const rows = useMemo(
-    () =>
-      workloads.filter((w) => {
-        if (text && !w.name.toLowerCase().includes(text.toLowerCase())) return false;
-        if (isolation === 'On-node' && w.isolation !== 'node') return false;
-        if (isolation === 'Peer pod' && w.isolation !== 'peerpod') return false;
-        return true;
-      }),
-    [workloads, text, isolation],
+  const namespaces = useMemo(
+    () => [...new Set(workloads.map((w) => w.namespace))].sort(),
+    [workloads],
   );
+
+  const onSort: OnSort = (_event, index, direction) => {
+    setSortBy({ index, direction });
+  };
+
+  const rows = useMemo(() => {
+    const filtered = workloads.filter((w) => {
+      if (text && !w.name.toLowerCase().includes(text.toLowerCase())) return false;
+      if (isolation === 'On-node' && w.isolation !== 'node') return false;
+      if (isolation === 'Peer pod' && w.isolation !== 'peerpod') return false;
+      if (nsFilter !== 'All' && w.namespace !== nsFilter) return false;
+      if (statusFilter !== 'All' && statusCategory(w.status) !== statusFilter) return false;
+      return true;
+    });
+
+    if (sortBy.index === undefined) return filtered;
+
+    const field = SORTABLE_FIELDS[sortBy.index];
+    if (!field) return filtered;
+
+    const sorted = [...filtered].sort((a, b) => {
+      const aVal = String(a[field] ?? '');
+      const bVal = String(b[field] ?? '');
+      return aVal.localeCompare(bVal);
+    });
+    return sortBy.direction === 'desc' ? sorted.reverse() : sorted;
+  }, [workloads, text, isolation, nsFilter, statusFilter, sortBy]);
 
   const doDelete = async () => {
     if (!toDelete) return;
@@ -124,6 +195,12 @@ const SandboxWorkloadsList: FC = () => {
       setDeleting(false);
     }
   };
+
+  const getSortParams = (columnIndex: number) => ({
+    sortBy,
+    onSort,
+    columnIndex,
+  });
 
   return (
     <>
@@ -147,6 +224,36 @@ const SandboxWorkloadsList: FC = () => {
                   setText('');
                 }}
               />
+            </ToolbarItem>
+            <ToolbarItem>
+              <Select
+                isOpen={nsOpen}
+                selected={nsFilter}
+                onSelect={(_e, v) => {
+                  setNsFilter(v as string);
+                  setNsOpen(false);
+                }}
+                onOpenChange={setNsOpen}
+                toggle={(ref) => (
+                  <MenuToggle
+                    ref={ref}
+                    onClick={() => {
+                      setNsOpen(!nsOpen);
+                    }}
+                  >
+                    {nsFilter === 'All' ? t('All namespaces') : nsFilter}
+                  </MenuToggle>
+                )}
+              >
+                <SelectList>
+                  <SelectOption value="All">{t('All namespaces')}</SelectOption>
+                  {namespaces.map((ns) => (
+                    <SelectOption key={ns} value={ns}>
+                      {ns}
+                    </SelectOption>
+                  ))}
+                </SelectList>
+              </Select>
             </ToolbarItem>
             <ToolbarItem>
               <Select
@@ -175,10 +282,40 @@ const SandboxWorkloadsList: FC = () => {
                 </SelectList>
               </Select>
             </ToolbarItem>
+            <ToolbarItem>
+              <Select
+                isOpen={statusOpen}
+                selected={statusFilter}
+                onSelect={(_e, v) => {
+                  setStatusFilter(v as string);
+                  setStatusOpen(false);
+                }}
+                onOpenChange={setStatusOpen}
+                toggle={(ref) => (
+                  <MenuToggle
+                    ref={ref}
+                    onClick={() => {
+                      setStatusOpen(!statusOpen);
+                    }}
+                  >
+                    {statusFilter === 'All' ? t('All statuses') : statusFilter}
+                  </MenuToggle>
+                )}
+              >
+                <SelectList>
+                  <SelectOption value="All">{t('All statuses')}</SelectOption>
+                  <SelectOption value="Healthy">{t('Healthy')}</SelectOption>
+                  <SelectOption value="Pending">{t('Pending')}</SelectOption>
+                  <SelectOption value="Error">{t('Error')}</SelectOption>
+                </SelectList>
+              </Select>
+            </ToolbarItem>
           </ToolbarContent>
         </Toolbar>
 
-        {loaded && rows.length === 0 ? (
+        {!loaded ? (
+          <SkeletonTable />
+        ) : rows.length === 0 ? (
           <EmptyState headingLevel="h4" titleText={t('No sandboxed workloads')}>
             <EmptyStateBody>
               {t('Create a workload with a kata runtime class to see it here.')}
@@ -188,14 +325,14 @@ const SandboxWorkloadsList: FC = () => {
           <Table aria-label={t('Sandboxed workloads')} variant="compact">
             <Thead>
               <Tr>
-                <Th>{t('Name')}</Th>
-                <Th>{t('Namespace')}</Th>
-                <Th>{t('Kind')}</Th>
+                <Th sort={getSortParams(0)}>{t('Name')}</Th>
+                <Th sort={getSortParams(1)}>{t('Namespace')}</Th>
+                <Th sort={getSortParams(2)}>{t('Kind')}</Th>
                 <Th>{t('Runtime class')}</Th>
                 <Th>{t('Isolation')}</Th>
-                <Th>{t('Status')}</Th>
+                <Th sort={getSortParams(5)}>{t('Status')}</Th>
                 <Th>{t('Placement')}</Th>
-                <Th>{t('Created')}</Th>
+                <Th sort={getSortParams(7)}>{t('Created')}</Th>
                 <Th screenReaderText={t('Actions')} />
               </Tr>
             </Thead>

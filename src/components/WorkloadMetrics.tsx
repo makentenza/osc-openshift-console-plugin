@@ -70,8 +70,13 @@ export const WorkloadMetrics: FC<{
   const { t } = useTranslation('plugin__osc-plugin');
   const podSel = kind === 'Pod' ? `pod="${name}"` : `pod=~"${name}-.*"`;
   const base = `namespace="${namespace}",${podSel},container!="",container!="POD"`;
+  const netBase = `namespace="${namespace}",${podSel}`;
   const cpuQuery = `sum(rate(container_cpu_usage_seconds_total{${base}}[2m]))`;
   const memQuery = `sum(container_memory_working_set_bytes{${base}})`;
+  const netRxQuery = `sum(rate(container_network_receive_bytes_total{${netBase}}[2m]))`;
+  const netTxQuery = `sum(rate(container_network_transmit_bytes_total{${netBase}}[2m]))`;
+
+  const fmtBytes = (n?: number) => (n === undefined ? '—' : `${(n / 1024).toFixed(1)} KiB/s`);
 
   return (
     <>
@@ -99,6 +104,24 @@ export const WorkloadMetrics: FC<{
             namespace={namespace}
             color="var(--pf-t--global--icon--color--status--success--default, #3e8635)"
             format={(n) => (n === undefined ? '—' : `${(n / 1024 / 1024).toFixed(1)} MiB`)}
+          />
+        </GridItem>
+        <GridItem span={6}>
+          <MetricCard
+            title={t('Network received')}
+            query={netRxQuery}
+            namespace={namespace}
+            color="var(--pf-t--global--icon--color--status--warning--default, #f0ab00)"
+            format={fmtBytes}
+          />
+        </GridItem>
+        <GridItem span={6}>
+          <MetricCard
+            title={t('Network transmitted')}
+            query={netTxQuery}
+            namespace={namespace}
+            color="var(--pf-t--global--icon--color--status--custom--default, #795600)"
+            format={fmtBytes}
           />
         </GridItem>
       </Grid>

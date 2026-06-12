@@ -30,6 +30,7 @@ export const DaemonSetGVK: K8sGroupVersionKind = {
   kind: 'DaemonSet',
 };
 export const ConfigMapGVK: K8sGroupVersionKind = { version: 'v1', kind: 'ConfigMap' };
+export const EventGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Event' };
 export const NamespaceGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Namespace' };
 
 /** Minimal K8sModels for create/delete via k8sCreate / k8sDelete. */

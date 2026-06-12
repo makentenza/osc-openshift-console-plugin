@@ -21,7 +21,8 @@
     "cypress-merge": "mochawesome-merge ./integration-tests/screenshots/cypress_report*.json > ./integration-tests/screenshots/cypress.json",
     "cypress-generate": "marge -o ./integration-tests/screenshots/ -f cypress-report -t 'OpenShift Console Plugin Template Cypress Test Results' -p 'OpenShift Cypress Plugin Template Test Results' --showPassed false --assetsDir ./integration-tests/screenshots/cypress/assets ./integration-tests/screenshots/cypress.json",
     "cypress-postreport": "yarn cypress-merge && yarn cypress-generate",
-    "webpack": "node -r ts-node/register ./node_modules/.bin/webpack"
+    "webpack": "node -r ts-node/register ./node_modules/.bin/webpack",
+    "deploy": "./deploy.sh"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

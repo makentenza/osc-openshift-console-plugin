@@ -2,6 +2,15 @@
   text-align: center;
 }
 
+.osc-plugin__stat--clickable {
+  cursor: pointer;
+  transition: box-shadow 0.15s ease-in-out;
+}
+
+.osc-plugin__stat--clickable:hover {
+  box-shadow: var(--pf-t--global--box-shadow--md);
+}
+
 .osc-plugin__stat-value {
   font-size: var(--pf-t--global--font--size--2xl, 1.5rem);
   font-weight: var(--pf-t--global--font--weight--body--bold, 700);
@@ -47,4 +56,47 @@
 .osc-plugin__spark {
   display: block;
   margin-block-start: var(--pf-t--global--spacer--sm, 0.5rem);
+}
+
+.osc-plugin__health-bar {
+  display: flex;
+  block-size: var(--pf-t--global--spacer--sm, 0.5rem);
+  border-radius: var(--pf-t--global--border--radius--small, 3px);
+  overflow: hidden;
+}
+
+.osc-plugin__health-segment--healthy {
+  background-color: var(--pf-t--global--icon--color--status--success--default);
+}
+
+.osc-plugin__health-segment--warning {
+  background-color: var(--pf-t--global--icon--color--status--warning--default);
+}
+
+.osc-plugin__health-segment--error {
+  background-color: var(--pf-t--global--icon--color--status--danger--default);
+}
+
+.osc-plugin__detail-tabs {
+  margin-block-start: var(--pf-t--global--spacer--md, 1rem);
+}
+
+.osc-plugin__breadcrumb-section {
+  padding-block-end: 0;
+}
+
+.osc-plugin__event-message {
+  max-inline-size: 40rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.osc-plugin__icon-warning {
+  color: var(--pf-t--global--icon--color--status--warning--default);
+}
+
+.osc-plugin__icon-info {
+  color: var(--pf-t--global--icon--color--status--info--default);
 }

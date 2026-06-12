@@ -40,6 +40,18 @@ export type PeerPodKind = K8sResourceCommon & {
   };
 };
 
+export type ContainerStatusKind = {
+  name: string;
+  ready: boolean;
+  restartCount: number;
+  state?: {
+    waiting?: { reason?: string; message?: string };
+    running?: { startedAt?: string };
+    terminated?: { exitCode?: number; reason?: string; finishedAt?: string };
+  };
+  image?: string;
+};
+
 /** Minimal Pod shape we rely on. */
 export type PodKind = K8sResourceCommon & {
   spec?: {
@@ -50,6 +62,7 @@ export type PodKind = K8sResourceCommon & {
   status?: {
     phase?: string;
     podIP?: string;
+    containerStatuses?: ContainerStatusKind[];
   };
 };
 
@@ -77,6 +90,24 @@ export type DaemonSetKind = K8sResourceCommon & {
     numberReady?: number;
     numberAvailable?: number;
   };
+};
+
+/** v1 Event for watching cluster events. */
+export type EventKind = K8sResourceCommon & {
+  involvedObject: {
+    kind: string;
+    name: string;
+    namespace?: string;
+    uid?: string;
+  };
+  reason?: string;
+  message?: string;
+  source?: { component?: string; host?: string };
+  type?: 'Normal' | 'Warning';
+  count?: number;
+  lastTimestamp?: string;
+  firstTimestamp?: string;
+  eventTime?: string;
 };
 
 /** Isolation classification derived from a RuntimeClass handler. */
