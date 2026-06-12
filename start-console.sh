@@ -6,8 +6,9 @@ CONSOLE_IMAGE=${CONSOLE_IMAGE:="quay.io/openshift/origin-console:latest"}
 CONSOLE_PORT=${CONSOLE_PORT:=9000}
 CONSOLE_IMAGE_PLATFORM=${CONSOLE_IMAGE_PLATFORM:="linux/amd64"}
 
-# Plugin metadata is declared in package.json
-PLUGIN_NAME=${npm_package_consolePlugin_name}
+# Plugin metadata is declared in package.json.
+# Yarn 4 (Berry) does not export npm_package_* env vars, so fall back to reading package.json.
+PLUGIN_NAME=${npm_package_consolePlugin_name:-$(node -p "require('./package.json').consolePlugin.name")}
 
 echo "Starting local OpenShift console..."
 
