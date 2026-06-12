@@ -169,6 +169,8 @@ const SandboxWorkloadDetail: FC = () => {
           onSelect={(_e, k) => {
             setActiveTab(k);
           }}
+          mountOnEnter
+          unmountOnExit
         >
           <Tab eventKey="details" title={<TabTitleText>{t('Details')}</TabTitleText>}>
             <div className="osc-plugin__detail-tabs">
@@ -278,7 +280,7 @@ const SandboxWorkloadDetail: FC = () => {
                   </Card>
                 </GridItem>
 
-                {isPod && (
+                {isPod && obj && (
                   <GridItem span={12}>
                     <Card>
                       <CardTitle>{t('Container statuses')}</CardTitle>
