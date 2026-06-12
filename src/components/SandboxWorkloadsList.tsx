@@ -11,7 +11,9 @@ import {
   DropdownItem,
   DropdownList,
   EmptyState,
+  EmptyStateActions,
   EmptyStateBody,
+  EmptyStateFooter,
   Label,
   MenuToggle,
   Modal,
@@ -33,27 +35,14 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ISortBy, OnSort } from '@patternfly/react-table';
 import type { FC } from 'react';
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom-v5-compat';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import { useSandboxWorkloads } from '../k8s/hooks';
 import { DeploymentModel, NamespaceGVK, PodModel } from '../k8s/resources';
 import type { SandboxWorkload } from '../k8s/types';
+import { statusCategory, statusColor } from '../utils/status';
 import { IsolationLabel } from './IsolationLabel';
 import './sandbox.css';
-
-const statusColor = (status: string): 'green' | 'orange' | 'red' | 'grey' => {
-  if (['Running', 'Available', 'Succeeded'].includes(status)) return 'green';
-  if (['Pending', 'Progressing', 'ContainerCreating'].includes(status)) return 'orange';
-  if (['Failed', 'Error', 'CrashLoopBackOff'].includes(status)) return 'red';
-  return 'grey';
-};
-
-const statusCategory = (status: string): string => {
-  if (['Running', 'Available', 'Succeeded'].includes(status)) return 'Healthy';
-  if (['Pending', 'Progressing', 'ContainerCreating'].includes(status)) return 'Pending';
-  if (['Failed', 'Error', 'CrashLoopBackOff'].includes(status)) return 'Error';
-  return 'Other';
-};
 
 const SORTABLE_FIELDS: (keyof SandboxWorkload | null)[] = [
   'name',
@@ -62,6 +51,7 @@ const SORTABLE_FIELDS: (keyof SandboxWorkload | null)[] = [
   null,
   null,
   'status',
+  null,
   null,
   'creationTimestamp',
 ];
@@ -114,7 +104,7 @@ const SkeletonTable: FC = () => (
   <Table aria-label="Loading" variant="compact">
     <Thead>
       <Tr>
-        {Array.from({ length: 9 }, (_, i) => (
+        {Array.from({ length: 10 }, (_, i) => (
           <Th key={i}>
             <Skeleton width="5rem" />
           </Th>
@@ -124,7 +114,7 @@ const SkeletonTable: FC = () => (
     <Tbody>
       {Array.from({ length: 5 }, (_, i) => (
         <Tr key={i}>
-          {Array.from({ length: 9 }, (_, j) => (
+          {Array.from({ length: 10 }, (_, j) => (
             <Td key={j}>
               <Skeleton width={j === 0 ? '10rem' : '6rem'} />
             </Td>
@@ -139,12 +129,38 @@ const SandboxWorkloadsList: FC = () => {
   const { t } = useTranslation('plugin__osc-plugin');
   const { workloads, loaded } = useSandboxWorkloads();
 
-  const [text, setText] = useState('');
-  const [isolation, setIsolation] = useState<string>('All');
+  // Filters live in the URL so the overview tiles, runtime-class links, and
+  // browser bookmarks can all deep-link into a pre-filtered view.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const text = searchParams.get('name') ?? '';
+  const nsFilter = searchParams.get('ns') ?? 'All';
+  const isolation = searchParams.get('isolation') ?? 'All'; // node | peerpod
+  const statusFilter = searchParams.get('status') ?? 'All'; // healthy | pending | error
+  const rcFilter = searchParams.get('rc') ?? '';
+
+  const setParam = (key: string, value?: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (!value || value === 'All') next.delete(key);
+        else next.set(key, value);
+        return next;
+      },
+      { replace: true },
+    );
+  };
+  const hasFilters =
+    text !== '' ||
+    nsFilter !== 'All' ||
+    isolation !== 'All' ||
+    statusFilter !== 'All' ||
+    rcFilter !== '';
+  const clearFilters = () => {
+    setSearchParams({}, { replace: true });
+  };
+
   const [isoOpen, setIsoOpen] = useState(false);
-  const [nsFilter, setNsFilter] = useState<string>('All');
   const [nsOpen, setNsOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('All');
   const [statusOpen, setStatusOpen] = useState(false);
   const [sortBy, setSortBy] = useState<ISortBy>({});
   const [toDelete, setToDelete] = useState<SandboxWorkload | undefined>();
@@ -162,10 +178,11 @@ const SandboxWorkloadsList: FC = () => {
   const rows = useMemo(() => {
     const filtered = workloads.filter((w) => {
       if (text && !w.name.toLowerCase().includes(text.toLowerCase())) return false;
-      if (isolation === 'On-node' && w.isolation !== 'node') return false;
-      if (isolation === 'Peer pod' && w.isolation !== 'peerpod') return false;
+      if (isolation !== 'All' && w.isolation !== isolation) return false;
       if (nsFilter !== 'All' && w.namespace !== nsFilter) return false;
-      if (statusFilter !== 'All' && statusCategory(w.status) !== statusFilter) return false;
+      if (statusFilter !== 'All' && statusCategory(w.status).toLowerCase() !== statusFilter)
+        return false;
+      if (rcFilter && w.runtimeClass !== rcFilter) return false;
       return true;
     });
 
@@ -180,7 +197,7 @@ const SandboxWorkloadsList: FC = () => {
       return aVal.localeCompare(bVal);
     });
     return sortBy.direction === 'desc' ? sorted.reverse() : sorted;
-  }, [workloads, text, isolation, nsFilter, statusFilter, sortBy]);
+  }, [workloads, text, isolation, nsFilter, statusFilter, rcFilter, sortBy]);
 
   const doDelete = async () => {
     if (!toDelete) return;
@@ -202,6 +219,15 @@ const SandboxWorkloadsList: FC = () => {
     columnIndex,
   });
 
+  const statusLabel = (value: string) =>
+    value === 'healthy'
+      ? t('Healthy')
+      : value === 'pending'
+        ? t('Pending')
+        : value === 'error'
+          ? t('Error')
+          : t('All statuses');
+
   return (
     <>
       <DocumentTitle>{t('Sandboxed workloads')}</DocumentTitle>
@@ -218,10 +244,10 @@ const SandboxWorkloadsList: FC = () => {
                 placeholder={t('Filter by name')}
                 value={text}
                 onChange={(_e, v) => {
-                  setText(v);
+                  setParam('name', v);
                 }}
                 onClear={() => {
-                  setText('');
+                  setParam('name');
                 }}
               />
             </ToolbarItem>
@@ -230,7 +256,7 @@ const SandboxWorkloadsList: FC = () => {
                 isOpen={nsOpen}
                 selected={nsFilter}
                 onSelect={(_e, v) => {
-                  setNsFilter(v as string);
+                  setParam('ns', v as string);
                   setNsOpen(false);
                 }}
                 onOpenChange={setNsOpen}
@@ -260,7 +286,7 @@ const SandboxWorkloadsList: FC = () => {
                 isOpen={isoOpen}
                 selected={isolation}
                 onSelect={(_e, v) => {
-                  setIsolation(v as string);
+                  setParam('isolation', v as string);
                   setIsoOpen(false);
                 }}
                 onOpenChange={setIsoOpen}
@@ -271,14 +297,18 @@ const SandboxWorkloadsList: FC = () => {
                       setIsoOpen(!isoOpen);
                     }}
                   >
-                    {isolation === 'All' ? t('All isolation types') : isolation}
+                    {isolation === 'node'
+                      ? t('On-node')
+                      : isolation === 'peerpod'
+                        ? t('Peer pod')
+                        : t('All isolation types')}
                   </MenuToggle>
                 )}
               >
                 <SelectList>
                   <SelectOption value="All">{t('All isolation types')}</SelectOption>
-                  <SelectOption value="On-node">{t('On-node')}</SelectOption>
-                  <SelectOption value="Peer pod">{t('Peer pod')}</SelectOption>
+                  <SelectOption value="node">{t('On-node')}</SelectOption>
+                  <SelectOption value="peerpod">{t('Peer pod')}</SelectOption>
                 </SelectList>
               </Select>
             </ToolbarItem>
@@ -287,7 +317,7 @@ const SandboxWorkloadsList: FC = () => {
                 isOpen={statusOpen}
                 selected={statusFilter}
                 onSelect={(_e, v) => {
-                  setStatusFilter(v as string);
+                  setParam('status', v as string);
                   setStatusOpen(false);
                 }}
                 onOpenChange={setStatusOpen}
@@ -298,29 +328,74 @@ const SandboxWorkloadsList: FC = () => {
                       setStatusOpen(!statusOpen);
                     }}
                   >
-                    {statusFilter === 'All' ? t('All statuses') : statusFilter}
+                    {statusLabel(statusFilter)}
                   </MenuToggle>
                 )}
               >
                 <SelectList>
                   <SelectOption value="All">{t('All statuses')}</SelectOption>
-                  <SelectOption value="Healthy">{t('Healthy')}</SelectOption>
-                  <SelectOption value="Pending">{t('Pending')}</SelectOption>
-                  <SelectOption value="Error">{t('Error')}</SelectOption>
+                  <SelectOption value="healthy">{t('Healthy')}</SelectOption>
+                  <SelectOption value="pending">{t('Pending')}</SelectOption>
+                  <SelectOption value="error">{t('Error')}</SelectOption>
                 </SelectList>
               </Select>
             </ToolbarItem>
+            {rcFilter && (
+              <ToolbarItem>
+                <Label
+                  onClose={() => {
+                    setParam('rc');
+                  }}
+                  closeBtnAriaLabel={t('Clear runtime class filter')}
+                >
+                  {t('Runtime class')}: {rcFilter}
+                </Label>
+              </ToolbarItem>
+            )}
+            {hasFilters && (
+              <ToolbarItem>
+                <Button variant="link" isInline onClick={clearFilters}>
+                  {t('Clear all filters')}
+                </Button>
+              </ToolbarItem>
+            )}
           </ToolbarContent>
         </Toolbar>
 
         {!loaded ? (
           <SkeletonTable />
         ) : rows.length === 0 ? (
-          <EmptyState headingLevel="h4" titleText={t('No sandboxed workloads')}>
-            <EmptyStateBody>
-              {t('Create a workload with a kata runtime class to see it here.')}
-            </EmptyStateBody>
-          </EmptyState>
+          workloads.length === 0 ? (
+            <EmptyState headingLevel="h4" titleText={t('No sandboxed workloads')}>
+              <EmptyStateBody>
+                {t(
+                  'Sandboxed workloads run inside a dedicated VM for kernel-level isolation. Create one with a kata runtime class to see it here.',
+                )}
+              </EmptyStateBody>
+              <EmptyStateFooter>
+                <EmptyStateActions>
+                  <Link to="/sandboxes/workloads/~new">
+                    <Button variant="primary">{t('Create sandboxed workload')}</Button>
+                  </Link>
+                </EmptyStateActions>
+              </EmptyStateFooter>
+            </EmptyState>
+          ) : (
+            <EmptyState headingLevel="h4" titleText={t('No results match the current filters')}>
+              <EmptyStateBody>
+                {t('{{count}} sandboxed workloads are hidden by the active filters.', {
+                  count: workloads.length,
+                })}
+              </EmptyStateBody>
+              <EmptyStateFooter>
+                <EmptyStateActions>
+                  <Button variant="link" onClick={clearFilters}>
+                    {t('Clear all filters')}
+                  </Button>
+                </EmptyStateActions>
+              </EmptyStateFooter>
+            </EmptyState>
+          )
         ) : (
           <Table aria-label={t('Sandboxed workloads')} variant="compact">
             <Thead>
@@ -331,8 +406,9 @@ const SandboxWorkloadsList: FC = () => {
                 <Th>{t('Runtime class')}</Th>
                 <Th>{t('Isolation')}</Th>
                 <Th sort={getSortParams(5)}>{t('Status')}</Th>
+                <Th>{t('Restarts')}</Th>
                 <Th>{t('Placement')}</Th>
-                <Th sort={getSortParams(7)}>{t('Created')}</Th>
+                <Th sort={getSortParams(8)}>{t('Created')}</Th>
                 <Th screenReaderText={t('Actions')} />
               </Tr>
             </Thead>
@@ -354,6 +430,13 @@ const SandboxWorkloadsList: FC = () => {
                     <Label color={statusColor(w.status)} isCompact>
                       {w.ready ? `${w.status} (${w.ready})` : w.status}
                     </Label>
+                  </Td>
+                  <Td dataLabel={t('Restarts')}>
+                    {w.kind === 'Pod' ? (
+                      (w.restarts ?? 0)
+                    ) : (
+                      <span className="osc-plugin__muted">—</span>
+                    )}
                   </Td>
                   <Td dataLabel={t('Placement')}>
                     {w.placement ? (

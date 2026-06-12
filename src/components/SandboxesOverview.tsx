@@ -34,7 +34,8 @@ import { useTranslation } from 'react-i18next';
 import { useKataConfig, useRuntimeClasses, useSandboxWorkloads } from '../k8s/hooks';
 import { CAA_DAEMONSET, DaemonSetGVK, OSC_NAMESPACE } from '../k8s/resources';
 import type { DaemonSetKind } from '../k8s/types';
-import { isSandboxRuntimeClass, isolationForHandler } from '../utils/runtime';
+import { isSandboxRuntimeClass, isolationDescription, isolationForHandler } from '../utils/runtime';
+import { statusCategory } from '../utils/status';
 import { IsolationLabel } from './IsolationLabel';
 import RecentEventsCard from './RecentEventsCard';
 import './sandbox.css';
@@ -83,16 +84,49 @@ const HealthBar: FC<{ healthy: number; warning: number; error: number }> = ({
         )}
       </div>
       <Flex gap={{ default: 'gapMd' }} className="osc-plugin__mt">
-        <Label color="green" icon={<CheckCircleIcon />} isCompact>
-          {t('Healthy')}: {healthy}
-        </Label>
-        <Label color="orange" icon={<ExclamationTriangleIcon />} isCompact>
-          {t('Warning')}: {warning}
-        </Label>
-        <Label color="red" icon={<ExclamationCircleIcon />} isCompact>
-          {t('Error')}: {error}
-        </Label>
+        <Link to="/sandboxes/workloads?status=healthy">
+          <Label color="green" icon={<CheckCircleIcon />} isCompact>
+            {t('Healthy')}: {healthy}
+          </Label>
+        </Link>
+        <Link to="/sandboxes/workloads?status=pending">
+          <Label color="orange" icon={<ExclamationTriangleIcon />} isCompact>
+            {t('Pending')}: {warning}
+          </Label>
+        </Link>
+        <Link to="/sandboxes/workloads?status=error">
+          <Label color="red" icon={<ExclamationCircleIcon />} isCompact>
+            {t('Error')}: {error}
+          </Label>
+        </Link>
       </Flex>
+    </>
+  );
+};
+
+/** Shown instead of the health bar while the cluster has no sandboxed workloads yet. */
+const GettingStarted: FC = () => {
+  const { t } = useTranslation('plugin__osc-plugin');
+  return (
+    <>
+      <p className="osc-plugin__mb">
+        {t(
+          'Sandboxed workloads run inside a dedicated virtual machine, isolating them from the host kernel and from other workloads. Pick the isolation level that fits:',
+        )}
+      </p>
+      <Flex direction={{ default: 'column' }} gap={{ default: 'gapSm' }} className="osc-plugin__mb">
+        <FlexItem>
+          <IsolationLabel isolation="node" />{' '}
+          <span className="osc-plugin__muted">{isolationDescription('node')}</span>
+        </FlexItem>
+        <FlexItem>
+          <IsolationLabel isolation="peerpod" />{' '}
+          <span className="osc-plugin__muted">{isolationDescription('peerpod')}</span>
+        </FlexItem>
+      </Flex>
+      <Link to="/sandboxes/workloads/~new">
+        <Button variant="primary">{t('Create your first sandboxed workload')}</Button>
+      </Link>
     </>
   );
 };
@@ -119,8 +153,9 @@ const SandboxesOverview: FC = () => {
       warning = 0,
       error = 0;
     workloads.forEach((w) => {
-      if (['Running', 'Available', 'Succeeded'].includes(w.status)) healthy++;
-      else if (['Pending', 'Progressing', 'ContainerCreating'].includes(w.status)) warning++;
+      const cat = statusCategory(w.status);
+      if (cat === 'Healthy') healthy++;
+      else if (cat === 'Pending') warning++;
       else error++;
     });
     return { healthy, warning, error };
@@ -129,6 +164,7 @@ const SandboxesOverview: FC = () => {
   const inProgress = kataConfig?.status?.conditions?.find((c) => c.type === 'InProgress');
   const installing = inProgress?.status === 'True';
   const nodes = kataConfig?.status?.kataNodes;
+  const failedNodes = nodes?.failedToInstall ?? [];
   const peerPodsEnabled = kataConfig?.spec?.enablePeerPods;
   const sandboxRCs = runtimeClasses.filter(isSandboxRuntimeClass);
   const caaReady = `${caa?.status?.numberReady ?? 0}/${caa?.status?.desiredNumberScheduled ?? 0}`;
@@ -158,7 +194,7 @@ const SandboxesOverview: FC = () => {
               value={counts.node}
               label={t('On-node microVMs')}
               loading={wlLoading}
-              href="/sandboxes/workloads"
+              href="/sandboxes/workloads?isolation=node"
             />
           </GridItem>
           <GridItem span={2}>
@@ -166,7 +202,7 @@ const SandboxesOverview: FC = () => {
               value={counts.peerpod}
               label={t('Peer pods')}
               loading={wlLoading}
-              href="/sandboxes/workloads"
+              href="/sandboxes/workloads?isolation=peerpod"
             />
           </GridItem>
           <GridItem span={3}>
@@ -187,12 +223,16 @@ const SandboxesOverview: FC = () => {
 
           <GridItem span={12}>
             <Card>
-              <CardTitle>{t('Workload health')}</CardTitle>
+              <CardTitle>
+                {!wlLoading && counts.total === 0
+                  ? t('Get started with sandboxed workloads')
+                  : t('Workload health')}
+              </CardTitle>
               <CardBody>
                 {wlLoading ? (
                   <Skeleton width="100%" height="0.5rem" />
                 ) : counts.total === 0 ? (
-                  <span className="osc-plugin__muted">{t('No sandboxed workloads running.')}</span>
+                  <GettingStarted />
                 ) : (
                   <HealthBar {...healthCounts} />
                 )}
@@ -237,23 +277,35 @@ const SandboxesOverview: FC = () => {
                         {`${nodes?.readyNodeCount ?? 0} / ${nodes?.nodeCount ?? 0}`}
                       </DescriptionListDescription>
                     </DescriptionListGroup>
+                    {failedNodes.length > 0 && (
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>{t('Failed to install')}</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          <Label color="red" icon={<ExclamationCircleIcon />}>
+                            {failedNodes.join(', ')}
+                          </Label>
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                    )}
                     <DescriptionListGroup>
                       <DescriptionListTerm>{t('Peer pods')}</DescriptionListTerm>
                       <DescriptionListDescription>
                         {peerPodsEnabled ? t('Enabled') : t('Disabled')}
                       </DescriptionListDescription>
                     </DescriptionListGroup>
-                    <DescriptionListGroup>
-                      <DescriptionListTerm>{t('cloud-api-adaptor')}</DescriptionListTerm>
-                      <DescriptionListDescription>
-                        <ResourceLink
-                          groupVersionKind={DaemonSetGVK}
-                          name={CAA_DAEMONSET}
-                          namespace={OSC_NAMESPACE}
-                        />
-                        {` ${caaReady} ${t('ready')}`}
-                      </DescriptionListDescription>
-                    </DescriptionListGroup>
+                    {peerPodsEnabled && (
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>{t('cloud-api-adaptor')}</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          <ResourceLink
+                            groupVersionKind={DaemonSetGVK}
+                            name={CAA_DAEMONSET}
+                            namespace={OSC_NAMESPACE}
+                          />
+                          {` ${caaReady} ${t('ready')}`}
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                    )}
                   </DescriptionList>
                 )}
               </CardBody>

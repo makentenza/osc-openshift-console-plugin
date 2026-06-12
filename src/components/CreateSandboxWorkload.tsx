@@ -11,10 +11,19 @@ import {
   CardTitle,
   CodeBlock,
   CodeBlockCode,
+  DescriptionList,
+  DescriptionListDescription,
+  DescriptionListGroup,
+  DescriptionListTerm,
+  EmptyState,
+  EmptyStateBody,
   Form,
   FormGroup,
+  FormHelperText,
   Grid,
   GridItem,
+  HelperText,
+  HelperTextItem,
   MenuToggle,
   NumberInput,
   PageSection,
@@ -31,14 +40,25 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
 import { useRuntimeClasses } from '../k8s/hooks';
-import { DeploymentModel, NamespaceGVK, PodModel } from '../k8s/resources';
+import {
+  ConfigMapGVK,
+  DeploymentModel,
+  NamespaceGVK,
+  OSC_NAMESPACE,
+  PEER_PODS_CM,
+  PodModel,
+} from '../k8s/resources';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
-import type { RuntimeClassKind } from '../k8s/types';
+import type { ConfigMapKind, RuntimeClassKind } from '../k8s/types';
 import { isSandboxRuntimeClass, isolationForHandler, runtimeClassCatalog } from '../utils/runtime';
+import { toYaml } from '../utils/yaml';
 import { IsolationLabel } from './IsolationLabel';
 import './sandbox.css';
 
 const MACHINE_TYPE_ANNOTATION = 'io.katacontainers.config.hypervisor.machine_type';
+
+/** RFC 1123 label: what the API server will accept as a resource name. */
+const K8S_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
 interface WorkloadForm {
   kind: 'Pod' | 'Deployment';
@@ -109,7 +129,14 @@ const CreateSandboxWorkload: FC = () => {
     groupVersionKind: NamespaceGVK,
     isList: true,
   });
+  const [peerPodsCm] = useK8sWatchResource<ConfigMapKind>({
+    groupVersionKind: ConfigMapGVK,
+    namespace: OSC_NAMESPACE,
+    name: PEER_PODS_CM,
+  });
   const sandboxRCs = useMemo(() => runtimeClasses.filter(isSandboxRuntimeClass), [runtimeClasses]);
+  const defaultMachineType =
+    peerPodsCm?.data?.GCP_MACHINE_TYPE ?? peerPodsCm?.data?.PODVM_INSTANCE_TYPE;
 
   const [form, setForm] = useState<WorkloadForm>({
     kind: 'Pod',
@@ -148,8 +175,10 @@ const CreateSandboxWorkload: FC = () => {
     }
   };
 
-  const generalValid = !!form.name && !!form.namespace;
+  const nameValid = K8S_NAME_RE.test(form.name) && form.name.length <= 63;
+  const generalValid = nameValid && !!form.namespace;
   const rcValid = !!form.runtimeClass;
+  const containerValid = !!form.image;
 
   return (
     <>
@@ -191,10 +220,22 @@ const CreateSandboxWorkload: FC = () => {
                 <TextInput
                   id="name"
                   value={form.name}
+                  validated={!form.name || nameValid ? 'default' : 'error'}
                   onChange={(_e, v) => {
                     set({ name: v });
                   }}
                 />
+                {form.name && !nameValid && (
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem variant="error">
+                        {t(
+                          'Must consist of lowercase letters, numbers, and hyphens, start and end with an alphanumeric character, and be at most 63 characters.',
+                        )}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                )}
               </FormGroup>
               <FormGroup label={t('Namespace')} isRequired fieldId="namespace">
                 <Select
@@ -247,32 +288,46 @@ const CreateSandboxWorkload: FC = () => {
           </WizardStep>
 
           <WizardStep name={t('Runtime class')} id="step-rc" footer={{ isNextDisabled: !rcValid }}>
-            <Grid hasGutter>
-              {sandboxRCs.map((rc) => {
-                const name = rc.metadata?.name ?? '';
-                const iso = isolationForHandler(rc.handler);
-                const cat = runtimeClassCatalog[name];
-                const selected = form.runtimeClass === name;
-                return (
-                  <GridItem span={4} key={name}>
-                    <Card
-                      onClick={() => {
-                        set({ runtimeClass: name });
-                      }}
-                      className={`osc-plugin__rc-card${selected ? ' osc-plugin__rc-selected' : ''}`}
-                    >
-                      <CardTitle>
-                        {cat?.title ?? name} <IsolationLabel isolation={iso} />
-                      </CardTitle>
-                      <CardBody>{cat?.blurb ?? t('Sandbox runtime class.')}</CardBody>
-                    </Card>
-                  </GridItem>
-                );
-              })}
-            </Grid>
+            {sandboxRCs.length === 0 ? (
+              <EmptyState headingLevel="h4" titleText={t('No sandbox runtime classes available')}>
+                <EmptyStateBody>
+                  {t(
+                    'No kata runtime classes were found. Check that the KataConfig has finished installing on the Sandboxes overview page.',
+                  )}
+                </EmptyStateBody>
+              </EmptyState>
+            ) : (
+              <Grid hasGutter>
+                {sandboxRCs.map((rc) => {
+                  const name = rc.metadata?.name ?? '';
+                  const iso = isolationForHandler(rc.handler);
+                  const cat = runtimeClassCatalog[name];
+                  const selected = form.runtimeClass === name;
+                  return (
+                    <GridItem span={4} key={name}>
+                      <Card
+                        onClick={() => {
+                          set({ runtimeClass: name });
+                        }}
+                        className={`osc-plugin__rc-card${selected ? ' osc-plugin__rc-selected' : ''}`}
+                      >
+                        <CardTitle>
+                          {cat?.title ?? name} <IsolationLabel isolation={iso} />
+                        </CardTitle>
+                        <CardBody>{cat?.blurb ?? t('Sandbox runtime class.')}</CardBody>
+                      </Card>
+                    </GridItem>
+                  );
+                })}
+              </Grid>
+            )}
           </WizardStep>
 
-          <WizardStep name={t('Container')} id="step-container">
+          <WizardStep
+            name={t('Container')}
+            id="step-container"
+            footer={{ isNextDisabled: !containerValid }}
+          >
             <Form>
               <FormGroup label={t('Image')} isRequired fieldId="image">
                 <TextInput
@@ -321,8 +376,19 @@ const CreateSandboxWorkload: FC = () => {
                     onChange={(_e, v) => {
                       set({ machineType: v });
                     }}
-                    placeholder="e2-standard-4"
+                    placeholder={defaultMachineType ?? 'e2-standard-4'}
                   />
+                  {defaultMachineType && (
+                    <FormHelperText>
+                      <HelperText>
+                        <HelperTextItem>
+                          {t('Leave empty to use the cluster default: {{mt}}', {
+                            mt: defaultMachineType,
+                          })}
+                        </HelperTextItem>
+                      </HelperText>
+                    </FormHelperText>
+                  )}
                 </FormGroup>
               )}
             </Form>
@@ -334,14 +400,82 @@ const CreateSandboxWorkload: FC = () => {
                 {error}
               </Alert>
             )}
-            <Card>
-              <CardTitle>{t('Manifest preview')}</CardTitle>
-              <CardBody>
-                <CodeBlock>
-                  <CodeBlockCode>{JSON.stringify(manifest, null, 2)}</CodeBlockCode>
-                </CodeBlock>
-              </CardBody>
-            </Card>
+            <Grid hasGutter>
+              <GridItem span={5}>
+                <Card isCompact>
+                  <CardTitle>{t('Summary')}</CardTitle>
+                  <CardBody>
+                    <DescriptionList isHorizontal isCompact>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>{t('Type')}</DescriptionListTerm>
+                        <DescriptionListDescription>{form.kind}</DescriptionListDescription>
+                      </DescriptionListGroup>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>{t('Name')}</DescriptionListTerm>
+                        <DescriptionListDescription>{form.name}</DescriptionListDescription>
+                      </DescriptionListGroup>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>{t('Namespace')}</DescriptionListTerm>
+                        <DescriptionListDescription>{form.namespace}</DescriptionListDescription>
+                      </DescriptionListGroup>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>{t('Runtime class')}</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          {form.runtimeClass}{' '}
+                          <IsolationLabel isolation={isolationForHandler(selectedRC?.handler)} />
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                      {form.kind === 'Deployment' && (
+                        <DescriptionListGroup>
+                          <DescriptionListTerm>{t('Replicas')}</DescriptionListTerm>
+                          <DescriptionListDescription>{form.replicas}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                      )}
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>{t('Image')}</DescriptionListTerm>
+                        <DescriptionListDescription className="osc-plugin__mono">
+                          {form.image}
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                      {(form.cpu || form.memory) && (
+                        <DescriptionListGroup>
+                          <DescriptionListTerm>{t('Resources')}</DescriptionListTerm>
+                          <DescriptionListDescription>
+                            {[
+                              form.cpu && `cpu: ${form.cpu}`,
+                              form.memory && `memory: ${form.memory}`,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </DescriptionListDescription>
+                        </DescriptionListGroup>
+                      )}
+                      {isPeerPod && (
+                        <DescriptionListGroup>
+                          <DescriptionListTerm>{t('Machine type')}</DescriptionListTerm>
+                          <DescriptionListDescription>
+                            {form.machineType ||
+                              (defaultMachineType
+                                ? t('Cluster default ({{mt}})', { mt: defaultMachineType })
+                                : t('Cluster default'))}
+                          </DescriptionListDescription>
+                        </DescriptionListGroup>
+                      )}
+                    </DescriptionList>
+                  </CardBody>
+                </Card>
+              </GridItem>
+              <GridItem span={7}>
+                <Card isCompact>
+                  <CardTitle>{t('Manifest preview')}</CardTitle>
+                  <CardBody>
+                    <CodeBlock>
+                      <CodeBlockCode>{toYaml(manifest)}</CodeBlockCode>
+                    </CodeBlock>
+                  </CardBody>
+                </Card>
+              </GridItem>
+            </Grid>
           </WizardStep>
         </Wizard>
       </PageSection>

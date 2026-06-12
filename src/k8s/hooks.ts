@@ -11,6 +11,7 @@ import type {
   SandboxWorkload,
 } from './types';
 import { buildIsolationMap, isSandboxRuntimeClass } from '../utils/runtime';
+import { podDisplayStatus, podRestartCount } from '../utils/status';
 
 export const useRuntimeClasses = (): [RuntimeClassKind[], boolean] => {
   const [data, loaded] = useK8sWatchResource<RuntimeClassKind[]>({
@@ -43,8 +44,6 @@ export const usePeerPodIndex = (): Record<string, PeerPodKind> => {
     return index;
   }, [data]);
 };
-
-const podStatus = (pod: PodKind): string => pod.status?.phase ?? 'Unknown';
 
 const deploymentReady = (d: DeploymentKind): string =>
   `${d.status?.readyReplicas ?? 0}/${d.spec?.replicas ?? d.status?.replicas ?? 0}`;
@@ -115,7 +114,8 @@ export const useSandboxWorkloads = (): {
         isolation,
         placement: isolation === 'peerpod' ? peerPod?.spec?.instanceID : p.spec?.nodeName,
         cloudProvider: peerPod?.spec?.cloudProvider,
-        status: podStatus(p),
+        status: podDisplayStatus(p),
+        restarts: podRestartCount(p),
         creationTimestamp: p.metadata?.creationTimestamp,
         obj: p,
       });
@@ -127,4 +127,24 @@ export const useSandboxWorkloads = (): {
   }, [pods, deployments, sandboxRCNames, isolationMap, peerPods, rcLoaded]);
 
   return { workloads, loaded: rcLoaded && podsLoaded && depLoaded, isolationMap };
+};
+
+/** Pods belonging to a Deployment, matched via its label selector. */
+export const useDeploymentPods = (
+  namespace?: string,
+  matchLabels?: Record<string, string>,
+): [PodKind[], boolean] => {
+  const [pods, loaded] = useK8sWatchResource<PodKind[]>({
+    groupVersionKind: PodGVK,
+    isList: true,
+    namespace,
+  });
+  return useMemo(() => {
+    const entries = Object.entries(matchLabels ?? {});
+    if (!entries.length) return [[], loaded];
+    const matched = (pods ?? []).filter((p) =>
+      entries.every(([k, v]) => p.metadata?.labels?.[k] === v),
+    );
+    return [matched, loaded];
+  }, [pods, loaded, matchLabels]);
 };

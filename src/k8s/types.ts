@@ -3,6 +3,14 @@ import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 /** A node.k8s.io/v1 RuntimeClass. */
 export type RuntimeClassKind = K8sResourceCommon & {
   handler?: string;
+  overhead?: {
+    podFixed?: Record<string, string>;
+  };
+};
+
+/** A v1 ConfigMap (we only read .data). */
+export type ConfigMapKind = K8sResourceCommon & {
+  data?: Record<string, string>;
 };
 
 /** kataconfiguration.openshift.io/v1 KataConfig (cluster-scoped singleton). */
@@ -70,6 +78,7 @@ export type PodKind = K8sResourceCommon & {
 export type DeploymentKind = K8sResourceCommon & {
   spec?: {
     replicas?: number;
+    selector?: { matchLabels?: Record<string, string> };
     template?: {
       spec?: {
         runtimeClassName?: string;
@@ -125,6 +134,8 @@ export interface SandboxWorkload {
   placement?: string;
   cloudProvider?: string;
   status: string;
+  /** Total container restarts (Pods only). */
+  restarts?: number;
   ready?: string; // e.g. "2/3" for deployments
   creationTimestamp?: string;
   obj: PodKind | DeploymentKind;

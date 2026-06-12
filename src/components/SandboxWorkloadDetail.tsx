@@ -27,6 +27,7 @@ import {
   Grid,
   GridItem,
   Label,
+  LabelGroup,
   Modal,
   ModalBody,
   ModalFooter,
@@ -37,14 +38,16 @@ import {
   Tabs,
   TabTitleText,
 } from '@patternfly/react-core';
+import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { FC } from 'react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
-import { useRuntimeClasses, usePeerPodIndex } from '../k8s/hooks';
+import { useDeploymentPods, useRuntimeClasses, usePeerPodIndex } from '../k8s/hooks';
 import { DeploymentGVK, DeploymentModel, PodGVK, PodModel } from '../k8s/resources';
-import type { DeploymentKind, PodKind } from '../k8s/types';
+import type { DeploymentKind, PeerPodKind, PodKind } from '../k8s/types';
 import { buildIsolationMap, isolationDescription } from '../utils/runtime';
+import { podDisplayStatus, podRestartCount, statusColor } from '../utils/status';
 import { ContainerStatuses } from './ContainerStatuses';
 import { IsolationLabel } from './IsolationLabel';
 import { WorkloadMetrics } from './WorkloadMetrics';
@@ -55,6 +58,75 @@ const YAMLFallback: FC<{ obj: unknown }> = ({ obj }) => (
     <CodeBlockCode>{JSON.stringify(obj, null, 2)}</CodeBlockCode>
   </CodeBlock>
 );
+
+/** Replica pods of a Deployment, with where each one landed. */
+const DeploymentPods: FC<{
+  namespace: string;
+  matchLabels?: Record<string, string>;
+  isPeerPod: boolean;
+  peerPods: Record<string, PeerPodKind>;
+}> = ({ namespace, matchLabels, isPeerPod, peerPods }) => {
+  const { t } = useTranslation('plugin__osc-plugin');
+  const [pods, loaded] = useDeploymentPods(namespace, matchLabels);
+
+  if (!loaded) return <span className="osc-plugin__muted">{t('Loading…')}</span>;
+  if (!pods.length)
+    return <span className="osc-plugin__muted">{t('No pods found for this deployment.')}</span>;
+
+  return (
+    <Table aria-label={t('Deployment pods')} variant="compact">
+      <Thead>
+        <Tr>
+          <Th>{t('Name')}</Th>
+          <Th>{t('Status')}</Th>
+          <Th>{t('Restarts')}</Th>
+          <Th>{isPeerPod ? t('Backing VM instance') : t('Node')}</Th>
+          <Th>{t('Created')}</Th>
+        </Tr>
+      </Thead>
+      <Tbody>
+        {pods.map((p) => {
+          const podName = p.metadata?.name ?? '';
+          const status = podDisplayStatus(p);
+          const placement = isPeerPod
+            ? peerPods[`${namespace}/${podName}`]?.spec?.instanceID
+            : p.spec?.nodeName;
+          return (
+            <Tr key={p.metadata?.uid ?? podName}>
+              <Td dataLabel={t('Name')}>
+                <Link to={`/sandboxes/workloads/Pod/${namespace}/${podName}`}>{podName}</Link>
+              </Td>
+              <Td dataLabel={t('Status')}>
+                <Label color={statusColor(status)} isCompact>
+                  {status}
+                </Label>
+              </Td>
+              <Td dataLabel={t('Restarts')}>{podRestartCount(p)}</Td>
+              <Td dataLabel={isPeerPod ? t('Backing VM instance') : t('Node')}>
+                {placement ? (
+                  isPeerPod ? (
+                    <span className="osc-plugin__mono">{placement}</span>
+                  ) : (
+                    <ResourceLink
+                      groupVersionKind={{ version: 'v1', kind: 'Node' }}
+                      name={placement}
+                      linkTo
+                    />
+                  )
+                ) : (
+                  <span className="osc-plugin__muted">{t('(provisioning…)')}</span>
+                )}
+              </Td>
+              <Td dataLabel={t('Created')}>
+                <Timestamp timestamp={p.metadata?.creationTimestamp} />
+              </Td>
+            </Tr>
+          );
+        })}
+      </Tbody>
+    </Table>
+  );
+};
 
 const SandboxWorkloadDetail: FC = () => {
   const { t } = useTranslation('plugin__osc-plugin');
@@ -81,9 +153,12 @@ const SandboxWorkloadDetail: FC = () => {
     ? (obj as PodKind)?.spec?.containers?.[0]?.image
     : (obj as DeploymentKind)?.spec?.template?.spec?.containers?.[0]?.image;
   const currentReplicas = !isPod ? ((obj as DeploymentKind)?.spec?.replicas ?? 1) : 0;
-  const status = isPod
-    ? (obj as PodKind)?.status?.phase
-    : `${(obj as DeploymentKind)?.status?.readyReplicas ?? 0}/${currentReplicas} ${t('ready')}`;
+  const status = !obj
+    ? '—'
+    : isPod
+      ? podDisplayStatus(obj as PodKind)
+      : `${(obj as DeploymentKind)?.status?.readyReplicas ?? 0}/${currentReplicas} ${t('ready')}`;
+  const labels = obj?.metadata?.labels ?? {};
 
   const [activeTab, setActiveTab] = useState<string | number>('details');
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -206,14 +281,52 @@ const SandboxWorkloadDetail: FC = () => {
                         </DescriptionListGroup>
                         <DescriptionListGroup>
                           <DescriptionListTerm>{t('Status')}</DescriptionListTerm>
-                          <DescriptionListDescription>{status}</DescriptionListDescription>
+                          <DescriptionListDescription>
+                            {isPod && obj ? (
+                              <Label color={statusColor(status)} isCompact>
+                                {status}
+                              </Label>
+                            ) : (
+                              status
+                            )}
+                          </DescriptionListDescription>
                         </DescriptionListGroup>
+                        {isPod && obj && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>{t('Restarts')}</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              {podRestartCount(obj as PodKind)}
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
+                        {isPod && (obj as PodKind)?.status?.podIP && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>{t('Pod IP')}</DescriptionListTerm>
+                            <DescriptionListDescription className="osc-plugin__mono">
+                              {(obj as PodKind).status?.podIP}
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
                         <DescriptionListGroup>
                           <DescriptionListTerm>{t('Image')}</DescriptionListTerm>
                           <DescriptionListDescription className="osc-plugin__mono">
                             {image ?? '—'}
                           </DescriptionListDescription>
                         </DescriptionListGroup>
+                        {Object.keys(labels).length > 0 && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>{t('Labels')}</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              <LabelGroup numLabels={5}>
+                                {Object.entries(labels).map(([k, v]) => (
+                                  <Label key={k} isCompact>
+                                    {k}={v}
+                                  </Label>
+                                ))}
+                              </LabelGroup>
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
                         <DescriptionListGroup>
                           <DescriptionListTerm>{t('Created')}</DescriptionListTerm>
                           <DescriptionListDescription>
@@ -246,7 +359,8 @@ const SandboxWorkloadDetail: FC = () => {
                           <DescriptionListGroup>
                             <DescriptionListTerm>{t('Backing VM instance')}</DescriptionListTerm>
                             <DescriptionListDescription className="osc-plugin__mono">
-                              {peerPod?.spec?.instanceID ?? t('(provisioning…)')}
+                              {peerPod?.spec?.instanceID ??
+                                (isPod ? t('(provisioning…)') : t('See the Pods tab'))}
                             </DescriptionListDescription>
                           </DescriptionListGroup>
                         </DescriptionList>
@@ -270,7 +384,7 @@ const SandboxWorkloadDetail: FC = () => {
                               ) : isPod ? (
                                 '—'
                               ) : (
-                                t('Varies per replica')
+                                t('See the Pods tab')
                               )}
                             </DescriptionListDescription>
                           </DescriptionListGroup>
@@ -294,6 +408,19 @@ const SandboxWorkloadDetail: FC = () => {
             </div>
           </Tab>
 
+          {!isPod && (
+            <Tab eventKey="pods" title={<TabTitleText>{t('Pods')}</TabTitleText>}>
+              <div className="osc-plugin__detail-tabs">
+                <DeploymentPods
+                  namespace={ns ?? ''}
+                  matchLabels={(obj as DeploymentKind)?.spec?.selector?.matchLabels}
+                  isPeerPod={isPeerPod}
+                  peerPods={peerPods}
+                />
+              </div>
+            </Tab>
+          )}
+
           <Tab eventKey="metrics" title={<TabTitleText>{t('Metrics')}</TabTitleText>}>
             <div className="osc-plugin__detail-tabs">
               <WorkloadMetrics
@@ -316,7 +443,7 @@ const SandboxWorkloadDetail: FC = () => {
           </Tab>
 
           <Tab eventKey="yaml" title={<TabTitleText>{t('YAML')}</TabTitleText>}>
-            <div className="osc-plugin__detail-tabs">
+            <div className="osc-plugin__detail-tabs osc-plugin__yaml">
               {obj ? (
                 <ResourceYAMLEditor initialResource={obj} readOnly />
               ) : (

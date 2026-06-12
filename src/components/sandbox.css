@@ -81,6 +81,11 @@
   margin-block-start: var(--pf-t--global--spacer--md, 1rem);
 }
 
+/* Monaco needs an explicit height on an ancestor or it collapses. */
+.osc-plugin__yaml {
+  block-size: 36rem;
+}
+
 .osc-plugin__breadcrumb-section {
   padding-block-end: 0;
 }
