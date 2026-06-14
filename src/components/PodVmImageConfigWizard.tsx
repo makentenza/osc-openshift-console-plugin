@@ -54,7 +54,7 @@ import {
   PODVM_IMAGE_CM,
 } from '../k8s/resources';
 import type { ConfigMapKind } from '../k8s/types';
-import { usePodvmImageCm } from '../k8s/setup';
+import { usePeerPodsCm, usePodvmImageCm } from '../k8s/setup';
 import { toYaml } from '../utils/yaml';
 import './sandbox.css';
 
@@ -217,6 +217,7 @@ const PodVmImageConfigWizard: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const navigate = useNavigate();
   const [existing, loaded] = usePodvmImageCm();
+  const [peerPodsCm] = usePeerPodsCm();
 
   const d = existing?.data ?? {};
   const [imageType] = useState(d.IMAGE_TYPE ?? 'pre-built');
@@ -275,6 +276,39 @@ const PodVmImageConfigWizard: FC = () => {
   const buildRunning = RUNNING_PHASES.includes(buildPhase ?? '');
   const buildFailed = FAILED_PHASES.includes(buildPhase ?? '');
   const buildComplete = buildPhase === 'Complete';
+
+  // Drive the overview stepper from real state so it actually advances — and reaches
+  // "Operator finishes" (when the operator writes PODVM_IMAGE_NAME back into
+  // peer-pods-cm) — instead of sitting on a perpetual, confusing "pending" final step.
+  const operatorDone = Boolean(peerPodsCm?.data?.PODVM_IMAGE_NAME);
+  const imageBuilt = buildComplete || uri.trim() !== '';
+  const flowSteps = [
+    {
+      id: 'flow-build',
+      title: t('Build the image'),
+      description: t('On your laptop or in the cluster'),
+      done: imageBuilt,
+    },
+    {
+      id: 'flow-store',
+      title: t('Store in a registry'),
+      description: t('So the cluster can pull it'),
+      done: imageBuilt,
+    },
+    {
+      id: 'flow-ref',
+      title: t('Reference it here'),
+      description: t('Paste the image location below'),
+      done: Boolean(existing),
+    },
+    {
+      id: 'flow-operator',
+      title: t('Operator finishes'),
+      description: t('Creates the cloud image & updates peer-pods-cm'),
+      done: operatorDone,
+    },
+  ];
+  const currentFlowIdx = flowSteps.findIndex((s) => !s.done);
 
   // Once the in-cluster build finishes, prefill the image URI (only if the user hasn't typed one).
   const prefilled = useRef(false);
@@ -376,39 +410,18 @@ const PodVmImageConfigWizard: FC = () => {
               isCenterAligned
               className="osc-openshift-console-plugin__mt"
             >
-              <ProgressStep
-                variant="info"
-                id="flow-build"
-                titleId="flow-build-title"
-                description={t('On your laptop or in the cluster')}
-              >
-                {t('Build the image')}
-              </ProgressStep>
-              <ProgressStep
-                variant="info"
-                id="flow-store"
-                titleId="flow-store-title"
-                description={t('So the cluster can pull it')}
-              >
-                {t('Store in a registry')}
-              </ProgressStep>
-              <ProgressStep
-                isCurrent
-                variant="info"
-                id="flow-ref"
-                titleId="flow-ref-title"
-                description={t('Paste the image location below')}
-              >
-                {t('Reference it here')}
-              </ProgressStep>
-              <ProgressStep
-                variant="pending"
-                id="flow-operator"
-                titleId="flow-operator-title"
-                description={t('Creates the cloud image & updates peer-pods-cm')}
-              >
-                {t('Operator finishes')}
-              </ProgressStep>
+              {flowSteps.map((s, i) => (
+                <ProgressStep
+                  key={s.id}
+                  id={s.id}
+                  titleId={`${s.id}-title`}
+                  variant={s.done ? 'success' : i === currentFlowIdx ? 'info' : 'pending'}
+                  isCurrent={i === currentFlowIdx}
+                  description={s.description}
+                >
+                  {s.title}
+                </ProgressStep>
+              ))}
             </ProgressStepper>
           </CardBody>
         </Card>
