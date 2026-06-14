@@ -58,5 +58,39 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-expressions': 'off',
     },
   },
+  {
+    // Cypress component tests (specs, support, SDK mock).
+    files: ['cypress/**/*.{ts,tsx}'],
+    ...cypress.configs.recommended,
+    languageOptions: {
+      ...cypress.configs.recommended.languageOptions,
+      globals: {
+        ...cypress.configs.recommended.languageOptions?.globals,
+        ...globals.browser,
+        require: 'readonly',
+      },
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    rules: {
+      ...cypress.configs.recommended.rules,
+      'no-console': 'off',
+      '@typescript-eslint/no-namespace': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/no-unused-expressions': 'off',
+    },
+  },
+  {
+    // CommonJS webpack config consumed by cypress.config.ts.
+    files: ['cypress/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: globals.node,
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
   prettier,
 );

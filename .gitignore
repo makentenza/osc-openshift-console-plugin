@@ -5,6 +5,11 @@
 integration-tests/.auth
 integration-tests/results
 
+# Cypress
+cypress/screenshots/
+cypress/videos/
+cypress/downloads/
+
 # Jest
 coverage/
 jest-junit.xml

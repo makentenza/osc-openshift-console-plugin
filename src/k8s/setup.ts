@@ -30,25 +30,36 @@ export type MachineSetKind = K8sResourceCommon & {
   spec?: { template?: { spec?: { providerSpec?: { value?: GcpProviderSpec } } } };
 };
 
+// A named-resource watch for an object that does not exist yet returns a 404
+// that sets `loadError` but never flips `loaded` to true. Report the watch as
+// settled once it is loaded OR errored, so create forms (which watch a CM that
+// is absent by definition) aren't blocked forever. Only expose the ConfigMap
+// when it genuinely loaded, so consumers can't mistake a not-found watch for an
+// existing resource.
+const settledCm = ([cm, loaded, loadError]: [ConfigMapKind | undefined, boolean, unknown]): [
+  ConfigMapKind | undefined,
+  boolean,
+] => [loaded ? cm : undefined, loaded || Boolean(loadError)];
+
 /** The cloud-api-adaptor config map (peer-pods-cm) in the OSC operator namespace. */
-export const usePeerPodsCm = (): [ConfigMapKind | undefined, boolean] => {
-  const [cm, loaded] = useK8sWatchResource<ConfigMapKind>({
-    groupVersionKind: ConfigMapGVK,
-    namespace: OSC_NAMESPACE,
-    name: PEER_PODS_CM,
-  });
-  return [cm, loaded];
-};
+export const usePeerPodsCm = (): [ConfigMapKind | undefined, boolean] =>
+  settledCm(
+    useK8sWatchResource<ConfigMapKind>({
+      groupVersionKind: ConfigMapGVK,
+      namespace: OSC_NAMESPACE,
+      name: PEER_PODS_CM,
+    }),
+  );
 
 /** The pod VM image config map (podvm-image-cm) that points the operator at a pre-built image. */
-export const usePodvmImageCm = (): [ConfigMapKind | undefined, boolean] => {
-  const [cm, loaded] = useK8sWatchResource<ConfigMapKind>({
-    groupVersionKind: ConfigMapGVK,
-    namespace: OSC_NAMESPACE,
-    name: PODVM_IMAGE_CM,
-  });
-  return [cm, loaded];
-};
+export const usePodvmImageCm = (): [ConfigMapKind | undefined, boolean] =>
+  settledCm(
+    useK8sWatchResource<ConfigMapKind>({
+      groupVersionKind: ConfigMapGVK,
+      namespace: OSC_NAMESPACE,
+      name: PODVM_IMAGE_CM,
+    }),
+  );
 
 export const useClusterPlatform = (): string | undefined => {
   const [infra] = useK8sWatchResource<InfrastructureKind>({

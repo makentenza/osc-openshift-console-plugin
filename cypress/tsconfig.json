@@ -1,0 +1,8 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["cypress", "node"],
+    "noUnusedLocals": false
+  },
+  "include": ["**/*.ts", "**/*.tsx", "../src/components/PeerPodsConfigWizard.tsx"]
+}
