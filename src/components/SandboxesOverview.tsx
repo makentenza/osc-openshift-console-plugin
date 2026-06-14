@@ -47,12 +47,15 @@ const StatTile: FC<{
   href?: string;
 }> = ({ value, label, loading, href }) => {
   const card = (
-    <Card isCompact className={`osc-plugin__stat${href ? ' osc-plugin__stat--clickable' : ''}`}>
+    <Card
+      isCompact
+      className={`osc-openshift-console-plugin__stat${href ? ' osc-openshift-console-plugin__stat--clickable' : ''}`}
+    >
       <CardBody>
-        <div className="osc-plugin__stat-value">
+        <div className="osc-openshift-console-plugin__stat-value">
           {loading ? <Skeleton width="3rem" height="1.5rem" /> : value}
         </div>
-        <div className="osc-plugin__stat-label">{label}</div>
+        <div className="osc-openshift-console-plugin__stat-label">{label}</div>
       </CardBody>
     </Card>
   );
@@ -64,7 +67,7 @@ const HealthBar: FC<{ healthy: number; warning: number; error: number }> = ({
   warning,
   error,
 }) => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const total = healthy + warning + error;
   if (total === 0) return null;
 
@@ -72,18 +75,27 @@ const HealthBar: FC<{ healthy: number; warning: number; error: number }> = ({
 
   return (
     <>
-      <div className="osc-plugin__health-bar">
+      <div className="osc-openshift-console-plugin__health-bar">
         {healthy > 0 && (
-          <div className="osc-plugin__health-segment--healthy" style={{ width: pct(healthy) }} />
+          <div
+            className="osc-openshift-console-plugin__health-segment--healthy"
+            style={{ width: pct(healthy) }}
+          />
         )}
         {warning > 0 && (
-          <div className="osc-plugin__health-segment--warning" style={{ width: pct(warning) }} />
+          <div
+            className="osc-openshift-console-plugin__health-segment--warning"
+            style={{ width: pct(warning) }}
+          />
         )}
         {error > 0 && (
-          <div className="osc-plugin__health-segment--error" style={{ width: pct(error) }} />
+          <div
+            className="osc-openshift-console-plugin__health-segment--error"
+            style={{ width: pct(error) }}
+          />
         )}
       </div>
-      <Flex gap={{ default: 'gapMd' }} className="osc-plugin__mt">
+      <Flex gap={{ default: 'gapMd' }} className="osc-openshift-console-plugin__mt">
         <Link to="/sandboxes/workloads?status=healthy">
           <Label color="green" icon={<CheckCircleIcon />} isCompact>
             {t('Healthy')}: {healthy}
@@ -106,22 +118,30 @@ const HealthBar: FC<{ healthy: number; warning: number; error: number }> = ({
 
 /** Shown instead of the health bar while the cluster has no sandboxed workloads yet. */
 const GettingStarted: FC = () => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   return (
     <>
-      <p className="osc-plugin__mb">
+      <p className="osc-openshift-console-plugin__mb">
         {t(
           'Sandboxed workloads run inside a dedicated virtual machine, isolating them from the host kernel and from other workloads. Pick the isolation level that fits:',
         )}
       </p>
-      <Flex direction={{ default: 'column' }} gap={{ default: 'gapSm' }} className="osc-plugin__mb">
+      <Flex
+        direction={{ default: 'column' }}
+        gap={{ default: 'gapSm' }}
+        className="osc-openshift-console-plugin__mb"
+      >
         <FlexItem>
           <IsolationLabel isolation="node" />{' '}
-          <span className="osc-plugin__muted">{isolationDescription('node')}</span>
+          <span className="osc-openshift-console-plugin__muted">
+            {isolationDescription('node')}
+          </span>
         </FlexItem>
         <FlexItem>
           <IsolationLabel isolation="peerpod" />{' '}
-          <span className="osc-plugin__muted">{isolationDescription('peerpod')}</span>
+          <span className="osc-openshift-console-plugin__muted">
+            {isolationDescription('peerpod')}
+          </span>
         </FlexItem>
       </Flex>
       <Link to="/sandboxes/workloads/~new">
@@ -132,7 +152,7 @@ const GettingStarted: FC = () => {
 };
 
 const SandboxesOverview: FC = () => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [kataConfig, kcLoaded] = useKataConfig();
   const [runtimeClasses] = useRuntimeClasses();
   const { workloads, loaded } = useSandboxWorkloads();
@@ -344,7 +364,7 @@ const SandboxesOverview: FC = () => {
                     ))}
                   </Flex>
                 )}
-                <Title headingLevel="h4" size="md" className="osc-plugin__mt">
+                <Title headingLevel="h4" size="md" className="osc-openshift-console-plugin__mt">
                   <Link to="/sandboxes/runtime-classes">{t('View runtime class details')}</Link>
                 </Title>
               </CardBody>

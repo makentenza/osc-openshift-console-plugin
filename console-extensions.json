@@ -15,7 +15,7 @@
     "properties": {
       "id": "sandboxes",
       "perspective": "admin",
-      "name": "%plugin__osc-plugin~Sandboxes%",
+      "name": "%plugin__osc-openshift-console-plugin~Sandboxes%",
       "insertAfter": "workloads"
     },
     "flags": { "required": ["OSC_KATACONFIG"] }
@@ -25,7 +25,7 @@
     "properties": {
       "id": "sandboxes-overview",
       "section": "sandboxes",
-      "name": "%plugin__osc-plugin~Overview%",
+      "name": "%plugin__osc-openshift-console-plugin~Overview%",
       "href": "/sandboxes",
       "perspective": "admin"
     },
@@ -36,7 +36,7 @@
     "properties": {
       "id": "sandboxes-workloads",
       "section": "sandboxes",
-      "name": "%plugin__osc-plugin~Workloads%",
+      "name": "%plugin__osc-openshift-console-plugin~Workloads%",
       "href": "/sandboxes/workloads",
       "perspective": "admin",
       "startsWith": ["sandboxes/workloads"]
@@ -48,7 +48,7 @@
     "properties": {
       "id": "sandboxes-runtime-classes",
       "section": "sandboxes",
-      "name": "%plugin__osc-plugin~Runtime classes%",
+      "name": "%plugin__osc-openshift-console-plugin~Runtime classes%",
       "href": "/sandboxes/runtime-classes",
       "perspective": "admin"
     },

@@ -63,7 +63,7 @@ const RowActions: FC<{ w: SandboxWorkload; onDelete: (w: SandboxWorkload) => voi
   w,
   onDelete,
 }) => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   return (
@@ -126,7 +126,7 @@ const SkeletonTable: FC = () => (
 );
 
 const SandboxWorkloadsList: FC = () => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const { workloads, loaded } = useSandboxWorkloads();
 
   // Filters live in the URL so the overview tiles, runtime-class links, and
@@ -435,14 +435,14 @@ const SandboxWorkloadsList: FC = () => {
                     {w.kind === 'Pod' ? (
                       (w.restarts ?? 0)
                     ) : (
-                      <span className="osc-plugin__muted">—</span>
+                      <span className="osc-openshift-console-plugin__muted">—</span>
                     )}
                   </Td>
                   <Td dataLabel={t('Placement')}>
                     {w.placement ? (
-                      <span className="osc-plugin__mono">{w.placement}</span>
+                      <span className="osc-openshift-console-plugin__mono">{w.placement}</span>
                     ) : (
-                      <span className="osc-plugin__muted">—</span>
+                      <span className="osc-openshift-console-plugin__muted">—</span>
                     )}
                   </Td>
                   <Td dataLabel={t('Created')}>

@@ -122,7 +122,7 @@ const buildManifest = (
 };
 
 const CreateSandboxWorkload: FC = () => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const navigate = useNavigate();
   const [runtimeClasses] = useRuntimeClasses();
   const [namespaces] = useK8sWatchResource<K8sResourceCommon[]>({
@@ -258,7 +258,7 @@ const CreateSandboxWorkload: FC = () => {
                     </MenuToggle>
                   )}
                 >
-                  <SelectList className="osc-plugin__ns-list">
+                  <SelectList className="osc-openshift-console-plugin__ns-list">
                     {(namespaces ?? []).map((ns) => (
                       <SelectOption key={ns.metadata?.name} value={ns.metadata?.name}>
                         {ns.metadata?.name}
@@ -309,7 +309,7 @@ const CreateSandboxWorkload: FC = () => {
                         onClick={() => {
                           set({ runtimeClass: name });
                         }}
-                        className={`osc-plugin__rc-card${selected ? ' osc-plugin__rc-selected' : ''}`}
+                        className={`osc-openshift-console-plugin__rc-card${selected ? ' osc-openshift-console-plugin__rc-selected' : ''}`}
                       >
                         <CardTitle>
                           {cat?.title ?? name} <IsolationLabel isolation={iso} />
@@ -433,7 +433,7 @@ const CreateSandboxWorkload: FC = () => {
                       )}
                       <DescriptionListGroup>
                         <DescriptionListTerm>{t('Image')}</DescriptionListTerm>
-                        <DescriptionListDescription className="osc-plugin__mono">
+                        <DescriptionListDescription className="osc-openshift-console-plugin__mono">
                           {form.image}
                         </DescriptionListDescription>
                       </DescriptionListGroup>

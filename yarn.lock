@@ -10405,9 +10405,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"osc-plugin@workspace:.":
+"osc-openshift-console-plugin@workspace:.":
   version: 0.0.0-use.local
-  resolution: "osc-plugin@workspace:."
+  resolution: "osc-openshift-console-plugin@workspace:."
   dependencies:
     "@babel/core": "npm:^7.29.0"
     "@babel/preset-env": "npm:^7.29.0"

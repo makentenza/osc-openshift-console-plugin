@@ -47,23 +47,23 @@ This plugin uses webpack module federation to load at runtime into the OpenShift
 - **NO hex colors** - use PatternFly CSS variables (e.g., `var(--pf-v6-global-palette--blue-500)`)
 - **NO naked element selectors** (like `table`, `div`) - prevents overwriting console styles
 - **NO `.pf-` or `.co-` prefixed classes** - these are reserved for PatternFly and console
-- **Prefix all custom classes** with plugin name (e.g., `osc-plugin__nice`)
+- **Prefix all custom classes** with plugin name (e.g., `osc-openshift-console-plugin__nice`)
 
 Don't disable these rules without understanding they protect against layout breakage!
 
 ## Internationalization (i18n)
 
-**Namespace Convention:** `plugin__<plugin-name>` (e.g., `plugin__osc-plugin`)
+**Namespace Convention:** `plugin__<plugin-name>` (e.g., `plugin__osc-openshift-console-plugin`)
 
 ### In React Components:
 ```tsx
-const { t } = useTranslation('plugin__osc-plugin');
+const { t } = useTranslation('plugin__osc-openshift-console-plugin');
 return <h1>{t('Hello, World!')}</h1>;
 ```
 
 ### In console-extensions.json:
 ```json
-"name": "%plugin__osc-plugin~My Label%"
+"name": "%plugin__osc-openshift-console-plugin~My Label%"
 ```
 
 **After adding/changing messages:** Run `yarn i18n` to update locale files in `/locales`
@@ -133,7 +133,7 @@ Current config has `strict: true` and enforces:
   "type": "console.navigation/href",
   "properties": {
     "id": "my-nav-item",
-    "name": "%plugin__osc-plugin~My Page%",
+    "name": "%plugin__osc-openshift-console-plugin~My Page%",
     "href": "/my-page",
     "perspective": "admin",
     "section": "home"

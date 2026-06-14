@@ -9,7 +9,7 @@ import type { EventKind } from '../k8s/types';
 import './sandbox.css';
 
 const RecentEventsCard: FC<{ limit?: number }> = ({ limit = 5 }) => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [events, loaded] = useK8sWatchResource<EventKind[]>({
     groupVersionKind: EventGVK,
     namespace: OSC_NAMESPACE,
@@ -39,7 +39,7 @@ const RecentEventsCard: FC<{ limit?: number }> = ({ limit = 5 }) => {
             ))}
           </Flex>
         ) : recent.length === 0 ? (
-          <span className="osc-plugin__muted">{t('No recent events.')}</span>
+          <span className="osc-openshift-console-plugin__muted">{t('No recent events.')}</span>
         ) : (
           <Flex direction={{ default: 'column' }} gap={{ default: 'gapSm' }}>
             {recent.map((ev) => (
@@ -50,21 +50,21 @@ const RecentEventsCard: FC<{ limit?: number }> = ({ limit = 5 }) => {
               >
                 <FlexItem>
                   {ev.type === 'Warning' ? (
-                    <ExclamationTriangleIcon className="osc-plugin__icon-warning" />
+                    <ExclamationTriangleIcon className="osc-openshift-console-plugin__icon-warning" />
                   ) : (
-                    <InfoCircleIcon className="osc-plugin__icon-info" />
+                    <InfoCircleIcon className="osc-openshift-console-plugin__icon-info" />
                   )}
                 </FlexItem>
                 <FlexItem>
                   <Label isCompact>{ev.reason}</Label>
                 </FlexItem>
                 <FlexItem grow={{ default: 'grow' }}>
-                  <span className="osc-plugin__event-message">{ev.message}</span>
+                  <span className="osc-openshift-console-plugin__event-message">{ev.message}</span>
                 </FlexItem>
                 <FlexItem>
                   <Timestamp
                     timestamp={ev.lastTimestamp ?? ev.eventTime}
-                    className="osc-plugin__muted"
+                    className="osc-openshift-console-plugin__muted"
                   />
                 </FlexItem>
               </Flex>

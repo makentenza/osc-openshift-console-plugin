@@ -18,7 +18,7 @@ import { IsolationLabel } from './IsolationLabel';
 import './sandbox.css';
 
 const RuntimeClassesList: FC = () => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [runtimeClasses] = useRuntimeClasses();
   const { workloads } = useSandboxWorkloads();
   const [cm] = useK8sWatchResource<ConfigMapKind>({
@@ -65,7 +65,7 @@ const RuntimeClassesList: FC = () => {
                   <Td dataLabel={t('Name')}>
                     <ResourceLink groupVersionKind={RuntimeClassGVK} name={name} />
                   </Td>
-                  <Td dataLabel={t('Handler')} className="osc-plugin__mono">
+                  <Td dataLabel={t('Handler')} className="osc-openshift-console-plugin__mono">
                     {rc.handler}
                   </Td>
                   <Td dataLabel={t('Isolation')}>
@@ -73,13 +73,13 @@ const RuntimeClassesList: FC = () => {
                   </Td>
                   <Td dataLabel={t('Pod overhead')}>
                     {overhead ? (
-                      <span className="osc-plugin__mono">
+                      <span className="osc-openshift-console-plugin__mono">
                         {Object.entries(overhead)
                           .map(([k, v]) => `${k}: ${v}`)
                           .join(' · ')}
                       </span>
                     ) : (
-                      <span className="osc-plugin__muted">—</span>
+                      <span className="osc-openshift-console-plugin__muted">—</span>
                     )}
                   </Td>
                   <Td dataLabel={t('Active workloads')}>
@@ -88,7 +88,7 @@ const RuntimeClassesList: FC = () => {
                         {count}
                       </Link>
                     ) : (
-                      <span className="osc-plugin__muted">0</span>
+                      <span className="osc-openshift-console-plugin__muted">0</span>
                     )}
                   </Td>
                   <Td dataLabel={t('Description')}>{isolationDescription(iso)}</Td>
@@ -98,14 +98,15 @@ const RuntimeClassesList: FC = () => {
           </Tbody>
         </Table>
 
-        <Card className="osc-plugin__mt">
+        <Card className="osc-openshift-console-plugin__mt">
           <CardTitle>{t('Peer pod defaults')}</CardTitle>
           <CardBody>
             {cm ? (
               <>
                 {t('Default machine type')}: <strong>{machineType ?? '—'}</strong>
                 <br />
-                {t('Pod VM image')}: <span className="osc-plugin__mono">{podvmImage ?? '—'}</span>
+                {t('Pod VM image')}:{' '}
+                <span className="osc-openshift-console-plugin__mono">{podvmImage ?? '—'}</span>
                 <br />
                 {t('Cloud provider')}: <strong>{cm?.data?.CLOUD_PROVIDER ?? '—'}</strong>
               </>

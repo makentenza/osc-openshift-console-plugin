@@ -24,7 +24,7 @@ const stateOf = (
 };
 
 export const ContainerStatuses: FC<{ pod: PodKind }> = ({ pod }) => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const statuses = pod.status?.containerStatuses;
 
   if (!statuses?.length) return null;
@@ -52,7 +52,7 @@ export const ContainerStatuses: FC<{ pod: PodKind }> = ({ pod }) => {
               </Td>
               <Td dataLabel={t('Restarts')}>{cs.restartCount}</Td>
               <Td dataLabel={t('Reason')}>
-                {s.reason ?? <span className="osc-plugin__muted">—</span>}
+                {s.reason ?? <span className="osc-openshift-console-plugin__muted">—</span>}
               </Td>
             </Tr>
           );

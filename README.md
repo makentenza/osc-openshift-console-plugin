@@ -1,239 +1,72 @@
-# OpenShift Sandboxed Containers console plugin (`osc-plugin`)
+# OpenShift Sandboxed Containers console plugin (`osc-openshift-console-plugin`)
 
-An OpenShift Console dynamic plugin that adds a **Sandboxes** menu for managing and
-observing [OpenShift sandboxed containers](https://github.com/openshift/sandboxed-containers-operator)
-workloads — both on-node Kata microVMs (`kata`) and peer pods (`kata-remote`).
+> [!WARNING]
+> **Unofficial and unsupported.** This is a community/personal project — **not** an official Red Hat
+> or OpenShift product, and **not** covered by Red Hat support, subscriptions, or any SLA. It is
+> provided **as-is** under the Apache-2.0 license. Validate in a
+> non-production environment before use, at your own risk.
 
-Features:
+An OpenShift Console **dynamic plugin** that adds a **Sandboxes** menu for managing and observing
+[OpenShift sandboxed containers](https://github.com/openshift/sandboxed-containers-operator)
+workloads — both on-node Kata microVMs (`kata`) and peer pods (`kata-remote`):
 
 - **Overview** — KataConfig install health, cloud-api-adaptor status, runtime classes, and
   workload counts split by isolation type.
-- **Workloads** — every Pod/Deployment using a kata runtime class, with an isolation badge
-  (on-node vs peer pod), status, and placement (node name, or the backing cloud VM
-  `instanceID` resolved from the `PeerPod` CR). Create and delete from here.
-- **Create wizard** — choose a runtime class (cards describing each isolation type), build a
-  Pod or Deployment, with a peer-pod machine-type override and a manifest preview.
+- **Workloads** — every Pod/Deployment on a kata runtime class, with an isolation badge
+  (on-node vs peer pod), status, and placement (node name, or the backing cloud VM `instanceID`
+  resolved from the `PeerPod` CR). Create and delete from here.
+- **Create wizard** — pick a runtime class (cards describe each isolation type), build a Pod or
+  Deployment with a peer-pod machine-type override and a manifest preview.
 - **Workload detail** — isolation, backing infrastructure, and live CPU/memory metrics.
 - **Runtime classes** — reference view of the kata runtime classes and peer-pod defaults.
 
-The whole menu is gated behind a feature flag on the `KataConfig` CRD, so it only appears
-when OSC is installed. It was generated from the OpenShift Console dynamic plugin template
-described below.
+The whole menu is gated behind a `console.flag/model` flag on the `KataConfig` CRD, so it only
+appears when OpenShift sandboxed containers is installed. Data is 100% Kubernetes API — no cloud
+provider credentials required.
 
-[Openshift console plugins](https://github.com/openshift/console/tree/main/frontend/packages/console-dynamic-plugin-sdk)
-allow you to extend the [OpenShift web console](https://github.com/openshift/console)
-at runtime, adding custom pages and other extensions. They are based on
-[webpack module federation](https://webpack.js.org/concepts/module-federation/).
-Plugins are registered with console using the `ConsolePlugin` custom resource
-and enabled in the console operator config by a cluster administrator.
+## Stack
 
-The `main` branch of this repository contains an example plugin which works
-with the latest version. To see an example of a plugin which works with an older
-version, visit the appropriate `release-4.x` branch.
+OCP **4.21**: React 17, PatternFly 6.2, `@openshift-console/dynamic-plugin-sdk` `4.21-latest`,
+`react-router-dom-v5-compat`, `ts-loader`, Yarn 4.14.1. Match the cluster's console version — the
+4.21 SDK emits the `loadPluginEntry` federation protocol the 4.21 console expects (4.22 consoles
+use a different protocol).
 
-[Node.js](https://nodejs.org/en/) and [yarn](https://yarnpkg.com) are required
-to build and run the example. To run OpenShift console in a container, either
-[Docker](https://www.docker.com) or [podman 3.2.0+](https://podman.io) and
-[oc](https://console.redhat.com/openshift/downloads) are required.
-
-## Getting started
-
-> [!IMPORTANT]
-> To use this template, **DO NOT FORK THIS REPOSITORY**! Click **Use this template**, then select
-> [**Create a new repository**](https://github.com/new?template_name=osc-plugin&template_owner=openshift)
-> to create a new repository.
->
-> ![A screenshot showing where the "Use this template" button is located](https://i.imgur.com/AhaySbU.png)
->
-> **Forking this repository** for purposes outside of contributing to this repository
-> **will cause issues**, as users cannot have more than one fork of a template repository
-> at a time. This could prevent future users from forking and contributing to your plugin.
->
-> Your fork would also behave like a template repository, which might be confusing for
-> contributiors, because it is not possible for repositories generated from a template
-> repository to contribute back to the template.
-
-After cloning your instantiated repository, you must update the plugin metadata, such as the
-plugin name in the `consolePlugin` declaration of [package.json](package.json).
-
-```json
-"consolePlugin": {
-  "name": "osc-plugin",
-  "version": "0.0.1",
-  "displayName": "My Plugin",
-  "description": "Enjoy this shiny, new console plugin!",
-  "exposedModules": {
-    "ExamplePage": "./components/ExamplePage"
-  },
-  "dependencies": {
-    "@console/pluginAPI": "*"
-  }
-}
-```
-
-The template adds a single example page in the Home navigation section. The
-extension is declared in the [console-extensions.json](console-extensions.json)
-file and the React component is declared in
-[src/components/ExamplePage.tsx](src/components/ExamplePage.tsx).
-
-You can run the plugin using a local development environment or build an image
-to deploy it to a cluster.
-
-## Development
-
-### Option 1: Local
-
-In one terminal window, run:
-
-1. `yarn install`
-2. `yarn run start`
-
-In another terminal window, run:
-
-1. `oc login` (requires [oc](https://console.redhat.com/openshift/downloads) and an [OpenShift cluster](https://console.redhat.com/openshift/create))
-2. `yarn run start-console` (requires [Docker](https://www.docker.com) or [podman 3.2.0+](https://podman.io))
-
-This will run the OpenShift console in a container connected to the cluster
-you've logged into. The plugin HTTP server runs on port 9001 with CORS enabled.
-Navigate to <http://localhost:9000/example> to see the running plugin.
-
-#### Running start-console with Apple silicon and podman
-
-If you are using podman on a Mac with Apple silicon, `yarn run start-console`
-might fail since it runs an amd64 image. You can workaround the problem with
-[qemu-user-static](https://github.com/multiarch/qemu-user-static) by running
-these commands:
+## Develop
 
 ```bash
-podman machine ssh
-sudo -i
-rpm-ostree install qemu-user-static
-systemctl reboot
+yarn install
+yarn start          # plugin dev server on :9001
+yarn start-console  # OpenShift console in a container (requires `oc login`)
+# open http://localhost:9000/sandboxes
 ```
 
-### Option 2: Docker + VSCode Remote Container
+- `yarn lint` — eslint + prettier + stylelint (`--fix`)
+- `yarn build` — production bundle
+- `yarn i18n` — regenerate `locales/en/plugin__osc-openshift-console-plugin.json`
 
-Make sure the
-[Remote Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-extension is installed. This method uses Docker Compose where one container is
-the OpenShift console and the second container is the plugin. It requires that
-you have access to an existing OpenShift cluster. After the initial build, the
-cached containers will help you start developing in seconds.
+On Apple silicon with podman, `yarn start-console` runs an amd64 image; if it fails, enable
+`qemu-user-static` (`podman machine ssh` → `sudo rpm-ostree install qemu-user-static` → reboot).
 
-1. Create a `dev.env` file inside the `.devcontainer` folder with the correct values for your cluster:
+## Deploy
+
+Build and push an image, then install the Helm chart — or use `./deploy.sh` to build, push, and
+roll out in one step:
 
 ```bash
-OC_PLUGIN_NAME=osc-plugin
-OC_URL=https://api.example.com:6443
-OC_USER=kubeadmin
-OC_PASS=<password>
+helm upgrade -i osc-openshift-console-plugin charts/openshift-console-plugin \
+  -n <namespace> --create-namespace --set plugin.image=<image>
 ```
 
-2. `(Ctrl+Shift+P) => Remote Containers: Open Folder in Container...`
-3. `yarn run start`
-4. Navigate to <http://localhost:9000/example>
+## Conventions
 
-## Docker image
-
-Before you can deploy your plugin on a cluster, you must build an image and
-push it to an image registry.
-
-1. Build the image:
-
-   ```sh
-   docker build -t quay.io/my-repository/my-plugin:latest .
-   ```
-
-2. Run the image:
-
-   ```sh
-   docker run -it --rm -d -p 9001:80 quay.io/my-repository/my-plugin:latest
-   ```
-
-3. Push the image:
-
-   ```sh
-   docker push quay.io/my-repository/my-plugin:latest
-   ```
-
-NOTE: If you have a Mac with Apple silicon, you will need to add the flag
-`--platform=linux/amd64` when building the image to target the correct platform
-to run in-cluster.
-
-## Deployment on cluster
-
-A [Helm](https://helm.sh) chart is available to deploy the plugin to an OpenShift environment.
-
-The following Helm parameters are required:
-
-`plugin.image`: The location of the image containing the plugin that was previously pushed
-
-Additional parameters can be specified if desired. Consult the chart [values](charts/openshift-console-plugin/values.yaml) file for the full set of supported parameters.
-
-### Installing the Helm Chart
-
-Install the chart using the name of the plugin as the Helm release name into a new namespace or an existing namespace as specified by the `plugin_osc-plugin` parameter and providing the location of the image within the `plugin.image` parameter by using the following command:
-
-```shell
-helm upgrade -i  my-plugin charts/openshift-console-plugin -n my-namespace --create-namespace --set plugin.image=my-plugin-image-location
-```
-
-NOTE: When deploying on OpenShift 4.10, it is recommended to add the parameter `--set plugin.securityContext.enabled=false` which will omit configurations related to Pod Security.
-
-NOTE: When defining i18n namespace, adhere `plugin__<name-of-the-plugin>` format. The name of the plugin should be extracted from the `consolePlugin` declaration within the [package.json](package.json) file.
-
-## i18n
-
-The plugin template demonstrates how you can translate messages in with [react-i18next](https://react.i18next.com/). The i18n namespace must match
-the name of the `ConsolePlugin` resource with the `plugin__` prefix to avoid
-naming conflicts. For example, the plugin template uses the
-`plugin__osc-plugin` namespace. You can use the `useTranslation` hook
-with this namespace as follows:
-
-```tsx
-const Header: React.FC = () => {
-  const { t } = useTranslation('plugin__osc-plugin');
-  return <h1>{t('Hello, World!')}</h1>;
-};
-```
-
-For labels in `console-extensions.json`, you can use the format
-`%plugin__osc-plugin~My Label%`. Console will replace the value with
-the message for the current language from the `plugin__osc-plugin`
-namespace. For example:
-
-```json
-  {
-    "type": "console.navigation/section",
-    "properties": {
-      "id": "admin-demo-section",
-      "perspective": "admin",
-      "name": "%plugin__osc-plugin~Plugin Template%"
-    }
-  }
-```
-
-Running `yarn i18n` updates the JSON files in the `locales` folder of the
-plugin template when adding or changing messages.
-
-## Linting
-
-This project adds prettier, eslint, and stylelint. Linting can be run with
-`yarn run lint`.
-
-The stylelint config disallows defining colors since these cause problems with dark
-mode. Use [PatternFly semantic tokens](https://www.patternfly.org/tokens/all-patternfly-tokens)
-for colors instead.
-
-The stylelint config also disallows naked element selectors like `table` and
-`.pf-` or `.co-` prefixed classes. This prevents plugins from accidentally
-overwriting default console styles, breaking the layout of existing pages. The
-best practice is to prefix your CSS class names with your plugin name to avoid
-conflicts. Please don't disable these rules without understanding how they can
-break console styles!
+- i18n namespace `plugin__osc-openshift-console-plugin`; CSS class prefix `osc-openshift-console-plugin__`.
+- PatternFly `--pf-t--*` semantic tokens only — **no hex/named colors** (stylelint enforces this to
+  keep dark mode working).
+- No naked element selectors or `.pf-` / `.co-` prefixed classes — they would clobber console styles.
+- Functional components; hooks in `src/k8s/hooks.ts` wrap `useK8sWatchResource`; resource types
+  extend `K8sResourceCommon`.
 
 ## References
 
-- [Console Plugin SDK README](https://github.com/openshift/console/tree/main/frontend/packages/console-dynamic-plugin-sdk)
-- [Customization Plugin Example](https://github.com/spadgett/console-customization-plugin)
-- [Dynamic Plugin Enhancement Proposal](https://github.com/openshift/enhancements/blob/master/enhancements/console/dynamic-plugins.md)
+- [Console dynamic plugin SDK](https://github.com/openshift/console/tree/main/frontend/packages/console-dynamic-plugin-sdk)
+- [Dynamic plugin enhancement proposal](https://github.com/openshift/enhancements/blob/master/enhancements/console/dynamic-plugins.md)

@@ -17,3 +17,7 @@ install-state.gz
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# yarn machine-local state
+.yarn/install-state.gz
+.yarn/cache

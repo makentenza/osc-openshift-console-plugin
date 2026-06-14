@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build, push, and roll out the osc-plugin image to the cluster's internal
+# Build, push, and roll out the osc-openshift-console-plugin image to the cluster's internal
 # image registry, then point the running Deployment at the freshly pushed digest.
 #
 # Usage:
@@ -11,8 +11,8 @@
 # Override defaults with env vars, e.g. NAMESPACE=foo ./deploy.sh
 set -euo pipefail
 
-NAMESPACE="${NAMESPACE:-osc-plugin}"
-PLUGIN="${PLUGIN:-osc-plugin}"
+NAMESPACE="${NAMESPACE:-osc-openshift-console-plugin}"
+PLUGIN="${PLUGIN:-osc-openshift-console-plugin}"
 TAG="${TAG:-latest}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 

@@ -6,7 +6,7 @@ import './sandbox.css';
 
 /** Minimal dependency-free sparkline from a series of numbers. */
 const Sparkline: FC<{ values: number[]; color: string }> = ({ values, color }) => {
-  if (!values.length) return <div className="osc-plugin__muted">—</div>;
+  if (!values.length) return <div className="osc-openshift-console-plugin__muted">—</div>;
   const w = 240;
   const h = 48;
   const max = Math.max(...values, 0.0001);
@@ -20,7 +20,7 @@ const Sparkline: FC<{ values: number[]; color: string }> = ({ values, color }) =
     })
     .join(' ');
   return (
-    <svg width={w} height={h} className="osc-plugin__spark" role="img">
+    <svg width={w} height={h} className="osc-openshift-console-plugin__spark" role="img">
       <polyline points={pts} fill="none" stroke={color} strokeWidth={2} />
     </svg>
   );
@@ -50,7 +50,7 @@ const MetricCard: FC<{
     <Card isCompact>
       <CardTitle>{title}</CardTitle>
       <CardBody>
-        <div className="osc-plugin__stat-value">{format(last)}</div>
+        <div className="osc-openshift-console-plugin__stat-value">{format(last)}</div>
         <Sparkline values={values} color={color} />
       </CardBody>
     </Card>
@@ -67,7 +67,7 @@ export const WorkloadMetrics: FC<{
   namespace: string;
   isPeerPod: boolean;
 }> = ({ kind, name, namespace, isPeerPod }) => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const podSel = kind === 'Pod' ? `pod="${name}"` : `pod=~"${name}-.*"`;
   const base = `namespace="${namespace}",${podSel},container!="",container!="POD"`;
   const netBase = `namespace="${namespace}",${podSel}`;
@@ -81,7 +81,7 @@ export const WorkloadMetrics: FC<{
   return (
     <>
       {isPeerPod && (
-        <p className="osc-plugin__muted osc-plugin__mb">
+        <p className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mb">
           {t(
             'Note: peer pods run in a remote VM, so node-side metrics may not reflect in-VM usage.',
           )}

@@ -1,12 +1,12 @@
 {
-  "name": "osc-plugin",
+  "name": "osc-openshift-console-plugin",
   "version": "0.0.1",
   "description": "Management and observability for OpenShift sandboxed containers (Kata + peer pods).",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/openshift/osc-plugin.git"
+    "url": "https://github.com/makentenza/osc-openshift-console-plugin.git"
   },
   "scripts": {
     "clean": "rm -rf dist",
@@ -75,7 +75,7 @@
     "webpack-dev-server": "^5.2.3"
   },
   "consolePlugin": {
-    "name": "osc-plugin",
+    "name": "osc-openshift-console-plugin",
     "version": "0.0.1",
     "displayName": "OpenShift Sandboxed Containers",
     "description": "Management and observability for OpenShift sandboxed containers (Kata + peer pods).",

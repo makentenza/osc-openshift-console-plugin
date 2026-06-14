@@ -66,12 +66,16 @@ const DeploymentPods: FC<{
   isPeerPod: boolean;
   peerPods: Record<string, PeerPodKind>;
 }> = ({ namespace, matchLabels, isPeerPod, peerPods }) => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [pods, loaded] = useDeploymentPods(namespace, matchLabels);
 
-  if (!loaded) return <span className="osc-plugin__muted">{t('Loading…')}</span>;
+  if (!loaded) return <span className="osc-openshift-console-plugin__muted">{t('Loading…')}</span>;
   if (!pods.length)
-    return <span className="osc-plugin__muted">{t('No pods found for this deployment.')}</span>;
+    return (
+      <span className="osc-openshift-console-plugin__muted">
+        {t('No pods found for this deployment.')}
+      </span>
+    );
 
   return (
     <Table aria-label={t('Deployment pods')} variant="compact">
@@ -105,7 +109,7 @@ const DeploymentPods: FC<{
               <Td dataLabel={isPeerPod ? t('Backing VM instance') : t('Node')}>
                 {placement ? (
                   isPeerPod ? (
-                    <span className="osc-plugin__mono">{placement}</span>
+                    <span className="osc-openshift-console-plugin__mono">{placement}</span>
                   ) : (
                     <ResourceLink
                       groupVersionKind={{ version: 'v1', kind: 'Node' }}
@@ -114,7 +118,9 @@ const DeploymentPods: FC<{
                     />
                   )
                 ) : (
-                  <span className="osc-plugin__muted">{t('(provisioning…)')}</span>
+                  <span className="osc-openshift-console-plugin__muted">
+                    {t('(provisioning…)')}
+                  </span>
                 )}
               </Td>
               <Td dataLabel={t('Created')}>
@@ -129,7 +135,7 @@ const DeploymentPods: FC<{
 };
 
 const SandboxWorkloadDetail: FC = () => {
-  const { t } = useTranslation('plugin__osc-plugin');
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const navigate = useNavigate();
   const { kind, ns, name } = useParams();
   const isPod = kind === 'Pod';
@@ -196,7 +202,7 @@ const SandboxWorkloadDetail: FC = () => {
   return (
     <>
       <DocumentTitle>{name ?? ''}</DocumentTitle>
-      <PageSection className="osc-plugin__breadcrumb-section">
+      <PageSection className="osc-openshift-console-plugin__breadcrumb-section">
         <Breadcrumb>
           <BreadcrumbItem>
             <Link to="/sandboxes">{t('Sandboxes')}</Link>
@@ -248,7 +254,7 @@ const SandboxWorkloadDetail: FC = () => {
           unmountOnExit
         >
           <Tab eventKey="details" title={<TabTitleText>{t('Details')}</TabTitleText>}>
-            <div className="osc-plugin__detail-tabs">
+            <div className="osc-openshift-console-plugin__detail-tabs">
               <Grid hasGutter>
                 <GridItem span={6}>
                   <Card>
@@ -274,7 +280,7 @@ const SandboxWorkloadDetail: FC = () => {
                           <DescriptionListTerm>{t('Isolation')}</DescriptionListTerm>
                           <DescriptionListDescription>
                             <IsolationLabel isolation={isolation} />
-                            <div className="osc-plugin__muted">
+                            <div className="osc-openshift-console-plugin__muted">
                               {isolationDescription(isolation)}
                             </div>
                           </DescriptionListDescription>
@@ -302,14 +308,14 @@ const SandboxWorkloadDetail: FC = () => {
                         {isPod && (obj as PodKind)?.status?.podIP && (
                           <DescriptionListGroup>
                             <DescriptionListTerm>{t('Pod IP')}</DescriptionListTerm>
-                            <DescriptionListDescription className="osc-plugin__mono">
+                            <DescriptionListDescription className="osc-openshift-console-plugin__mono">
                               {(obj as PodKind).status?.podIP}
                             </DescriptionListDescription>
                           </DescriptionListGroup>
                         )}
                         <DescriptionListGroup>
                           <DescriptionListTerm>{t('Image')}</DescriptionListTerm>
-                          <DescriptionListDescription className="osc-plugin__mono">
+                          <DescriptionListDescription className="osc-openshift-console-plugin__mono">
                             {image ?? '—'}
                           </DescriptionListDescription>
                         </DescriptionListGroup>
@@ -358,7 +364,7 @@ const SandboxWorkloadDetail: FC = () => {
                           </DescriptionListGroup>
                           <DescriptionListGroup>
                             <DescriptionListTerm>{t('Backing VM instance')}</DescriptionListTerm>
-                            <DescriptionListDescription className="osc-plugin__mono">
+                            <DescriptionListDescription className="osc-openshift-console-plugin__mono">
                               {peerPod?.spec?.instanceID ??
                                 (isPod ? t('(provisioning…)') : t('See the Pods tab'))}
                             </DescriptionListDescription>
@@ -410,7 +416,7 @@ const SandboxWorkloadDetail: FC = () => {
 
           {!isPod && (
             <Tab eventKey="pods" title={<TabTitleText>{t('Pods')}</TabTitleText>}>
-              <div className="osc-plugin__detail-tabs">
+              <div className="osc-openshift-console-plugin__detail-tabs">
                 <DeploymentPods
                   namespace={ns ?? ''}
                   matchLabels={(obj as DeploymentKind)?.spec?.selector?.matchLabels}
@@ -422,7 +428,7 @@ const SandboxWorkloadDetail: FC = () => {
           )}
 
           <Tab eventKey="metrics" title={<TabTitleText>{t('Metrics')}</TabTitleText>}>
-            <div className="osc-plugin__detail-tabs">
+            <div className="osc-openshift-console-plugin__detail-tabs">
               <WorkloadMetrics
                 kind={isPod ? 'Pod' : 'Deployment'}
                 name={name ?? ''}
@@ -433,17 +439,17 @@ const SandboxWorkloadDetail: FC = () => {
           </Tab>
 
           <Tab eventKey="events" title={<TabTitleText>{t('Events')}</TabTitleText>}>
-            <div className="osc-plugin__detail-tabs">
+            <div className="osc-openshift-console-plugin__detail-tabs">
               {obj ? (
                 <ResourceEventStream resource={obj} />
               ) : (
-                <span className="osc-plugin__muted">{t('Loading…')}</span>
+                <span className="osc-openshift-console-plugin__muted">{t('Loading…')}</span>
               )}
             </div>
           </Tab>
 
           <Tab eventKey="yaml" title={<TabTitleText>{t('YAML')}</TabTitleText>}>
-            <div className="osc-plugin__detail-tabs osc-plugin__yaml">
+            <div className="osc-openshift-console-plugin__detail-tabs osc-openshift-console-plugin__yaml">
               {obj ? (
                 <ResourceYAMLEditor initialResource={obj} readOnly />
               ) : (
@@ -496,7 +502,9 @@ const SandboxWorkloadDetail: FC = () => {
         >
           <ModalHeader title={t('Scale {{name}}', { name })} />
           <ModalBody>
-            <p className="osc-plugin__mb">{t('Set the number of replicas for this deployment.')}</p>
+            <p className="osc-openshift-console-plugin__mb">
+              {t('Set the number of replicas for this deployment.')}
+            </p>
             <NumberInput
               value={scaleValue}
               min={0}
