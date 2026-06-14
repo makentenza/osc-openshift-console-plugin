@@ -87,6 +87,37 @@ export const KataConfigModel: K8sModel = {
   crd: true,
 };
 
+export const BuildGVK: K8sGroupVersionKind = {
+  group: 'build.openshift.io',
+  version: 'v1',
+  kind: 'Build',
+};
+
+/** Name of the in-cluster pod VM image BuildConfig / ImageStream the Setup wizard creates. */
+export const PODVM_BUILDCONFIG = 'podvm-bootc';
+
+export const BuildConfigModel: K8sModel = {
+  apiGroup: 'build.openshift.io',
+  apiVersion: 'v1',
+  kind: 'BuildConfig',
+  plural: 'buildconfigs',
+  namespaced: true,
+  abbr: 'BC',
+  label: 'BuildConfig',
+  labelPlural: 'BuildConfigs',
+};
+
+export const ImageStreamModel: K8sModel = {
+  apiGroup: 'image.openshift.io',
+  apiVersion: 'v1',
+  kind: 'ImageStream',
+  plural: 'imagestreams',
+  namespaced: true,
+  abbr: 'IS',
+  label: 'ImageStream',
+  labelPlural: 'ImageStreams',
+};
+
 export const InfrastructureGVK: K8sGroupVersionKind = {
   group: 'config.openshift.io',
   version: 'v1',

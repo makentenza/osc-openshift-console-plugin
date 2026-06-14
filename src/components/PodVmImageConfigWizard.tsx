@@ -3,6 +3,8 @@ import {
   k8sCreate,
   k8sUpdate,
   ListPageHeader,
+  ResourceLink,
+  useK8sWatchResource,
   type K8sResourceCommon,
 } from '@openshift-console/dynamic-plugin-sdk';
 import {
@@ -17,6 +19,8 @@ import {
   CodeBlockCode,
   Content,
   ExpandableSection,
+  Flex,
+  FlexItem,
   Form,
   FormGroup,
   FormHelperText,
@@ -24,9 +28,11 @@ import {
   GridItem,
   HelperText,
   HelperTextItem,
+  Label,
   PageSection,
   ProgressStep,
   ProgressStepper,
+  Spinner,
   Switch,
   TextArea,
   TextInput,
@@ -34,10 +40,18 @@ import {
   ToggleGroupItem,
 } from '@patternfly/react-core';
 import type { FC, ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom-v5-compat';
 import { useTranslation } from 'react-i18next';
-import { ConfigMapModel, OSC_NAMESPACE, PODVM_IMAGE_CM } from '../k8s/resources';
+import {
+  BuildConfigModel,
+  BuildGVK,
+  ConfigMapModel,
+  ImageStreamModel,
+  OSC_NAMESPACE,
+  PODVM_BUILDCONFIG,
+  PODVM_IMAGE_CM,
+} from '../k8s/resources';
 import type { ConfigMapKind } from '../k8s/types';
 import { usePodvmImageCm } from '../k8s/setup';
 import { toYaml } from '../utils/yaml';
@@ -97,6 +111,49 @@ oc start-build podvm-bootc -n openshift-sandboxed-containers-operator --follow`;
 
 const CLUSTER_IMAGE_REF =
   'image-registry.openshift-image-registry.svc:5000/openshift-sandboxed-containers-operator/podvm-bootc:latest';
+
+const RUNNING_PHASES = ['New', 'Pending', 'Running'];
+const FAILED_PHASES = ['Failed', 'Error', 'Cancelled'];
+
+type BuildKind = K8sResourceCommon & { status?: { phase?: string } };
+
+const isAlreadyExists = (e: unknown): boolean => {
+  const msg = e instanceof Error ? e.message : String(e);
+  const code = typeof e === 'object' && e !== null ? (e as { code?: number }).code : undefined;
+  return code === 409 || /already exists/i.test(msg);
+};
+
+// The output ImageStream + Docker-strategy BuildConfig the wizard creates so OpenShift
+// builds the pod VM image in-cluster from Red Hat's upstream Containerfile — no local tools.
+const podvmImageStream: K8sResourceCommon = {
+  apiVersion: 'image.openshift.io/v1',
+  kind: 'ImageStream',
+  metadata: { name: PODVM_BUILDCONFIG, namespace: OSC_NAMESPACE },
+};
+
+const podvmBuildConfig: K8sResourceCommon & { spec: Record<string, unknown> } = {
+  apiVersion: 'build.openshift.io/v1',
+  kind: 'BuildConfig',
+  metadata: { name: PODVM_BUILDCONFIG, namespace: OSC_NAMESPACE },
+  spec: {
+    source: {
+      type: 'Git',
+      git: { uri: 'https://github.com/openshift/sandboxed-containers-operator.git' },
+      contextDir: 'config/peerpods/podvm/bootc',
+    },
+    strategy: { type: 'Docker', dockerStrategy: { dockerfilePath: 'Containerfile.rhel' } },
+    output: { to: { kind: 'ImageStreamTag', name: `${PODVM_BUILDCONFIG}:latest` } },
+    // A ConfigChange trigger starts the first build automatically when the BuildConfig is created.
+    triggers: [{ type: 'ConfigChange' }],
+  },
+};
+
+const podvmBuildRequest: K8sResourceCommon & { triggeredBy: unknown[] } = {
+  apiVersion: 'build.openshift.io/v1',
+  kind: 'BuildRequest',
+  metadata: { name: PODVM_BUILDCONFIG, namespace: OSC_NAMESPACE },
+  triggeredBy: [{ message: 'Started from the Setup wizard' }],
+};
 
 /** One numbered instruction in the build guide: badge + title + explanation + optional copyable command. */
 const BuildStep: FC<{
@@ -158,6 +215,71 @@ const PodVmImageConfigWizard: FC = () => {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
+
+  // In-cluster build: create the ImageStream + BuildConfig and start a build, then
+  // watch its status. No oc / podman needed.
+  const [buildBusy, setBuildBusy] = useState(false);
+  const [buildError, setBuildError] = useState<string | undefined>();
+  const [builds] = useK8sWatchResource<BuildKind[]>({
+    groupVersionKind: BuildGVK,
+    namespace: OSC_NAMESPACE,
+    isList: true,
+  });
+  const latestBuild = useMemo(() => {
+    const mine = (builds ?? []).filter(
+      (b) => b.metadata?.labels?.['openshift.io/build-config.name'] === PODVM_BUILDCONFIG,
+    );
+    return mine.sort((a, b) =>
+      (b.metadata?.creationTimestamp ?? '').localeCompare(a.metadata?.creationTimestamp ?? ''),
+    )[0];
+  }, [builds]);
+  const buildPhase = latestBuild?.status?.phase;
+  const buildRunning = RUNNING_PHASES.includes(buildPhase ?? '');
+  const buildFailed = FAILED_PHASES.includes(buildPhase ?? '');
+  const buildComplete = buildPhase === 'Complete';
+
+  // Once the in-cluster build finishes, prefill the image URI (only if the user hasn't typed one).
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (buildComplete && !prefilled.current && uri.trim() === '') {
+      prefilled.current = true;
+      setUri(CLUSTER_IMAGE_REF);
+    }
+  }, [buildComplete, uri]);
+
+  const startClusterBuild = async () => {
+    setBuildBusy(true);
+    setBuildError(undefined);
+    try {
+      try {
+        await k8sCreate({ model: ImageStreamModel, data: podvmImageStream });
+      } catch (e) {
+        if (!isAlreadyExists(e)) throw e;
+      }
+      let created = true;
+      try {
+        await k8sCreate({ model: BuildConfigModel, data: podvmBuildConfig });
+      } catch (e) {
+        if (isAlreadyExists(e)) created = false;
+        else throw e;
+      }
+      // A new BuildConfig auto-builds via its ConfigChange trigger; if it already
+      // existed, instantiate a fresh build explicitly.
+      if (!created) {
+        await k8sCreate({
+          model: BuildConfigModel,
+          data: podvmBuildRequest,
+          ns: OSC_NAMESPACE,
+          name: PODVM_BUILDCONFIG,
+          path: 'instantiate',
+        });
+      }
+    } catch (e) {
+      setBuildError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBuildBusy(false);
+    }
+  };
 
   const data: Record<string, string> = {
     IMAGE_TYPE: imageType,
@@ -336,23 +458,113 @@ const PodVmImageConfigWizard: FC = () => {
                       className="osc-openshift-console-plugin__mt osc-openshift-console-plugin__mb"
                     >
                       {t(
-                        'OpenShift builds the image with a BuildConfig and stores it in the internal registry. It uses your cluster pull secret for registry.redhat.io and needs network access to github.com.',
+                        'OpenShift builds the image for you with a BuildConfig and stores it in the internal registry. It uses your cluster pull secret for registry.redhat.io and needs network access to github.com.',
                       )}
                     </Alert>
                     <ol className="osc-openshift-console-plugin__steps">
-                      <BuildStep
-                        num={1}
-                        title={t('Build the image in the cluster')}
-                        command={CLUSTER_BUILD}
-                      >
-                        {t(
-                          'Create a build from Red Hat’s Containerfile and run it. Everything happens in the cluster — the --follow flag streams the logs until it finishes.',
-                        )}
-                      </BuildStep>
-                      <BuildStep
-                        num={2}
-                        title={t('Reference it in Step 2')}
-                        extra={
+                      <li className="osc-openshift-console-plugin__step">
+                        <span className="osc-openshift-console-plugin__step-num" aria-hidden="true">
+                          1
+                        </span>
+                        <div className="osc-openshift-console-plugin__step-body">
+                          <div className="osc-openshift-console-plugin__step-title">
+                            {t('Build the image in the cluster')}
+                          </div>
+                          <Content component="p" className="osc-openshift-console-plugin__muted">
+                            {t(
+                              'One click creates the build and starts it. Everything runs in the cluster — no podman, no copy-paste.',
+                            )}
+                          </Content>
+                          <div className="osc-openshift-console-plugin__step-cmd">
+                            <Button
+                              variant="primary"
+                              onClick={() => void startClusterBuild()}
+                              isLoading={buildBusy}
+                              isDisabled={buildBusy || buildRunning}
+                            >
+                              {buildRunning
+                                ? t('Building…')
+                                : latestBuild
+                                  ? t('Rebuild in the cluster')
+                                  : t('Build in the cluster')}
+                            </Button>
+                          </div>
+                          {buildError && (
+                            <Alert
+                              variant="danger"
+                              isInline
+                              title={t('Could not start the build')}
+                              className="osc-openshift-console-plugin__mt"
+                            >
+                              {buildError}
+                            </Alert>
+                          )}
+                          {latestBuild && (
+                            <div className="osc-openshift-console-plugin__step-cmd">
+                              <Flex
+                                alignItems={{ default: 'alignItemsCenter' }}
+                                gap={{ default: 'gapSm' }}
+                                flexWrap={{ default: 'wrap' }}
+                              >
+                                {buildRunning && (
+                                  <FlexItem>
+                                    <Spinner size="md" aria-label={t('Build running')} />
+                                  </FlexItem>
+                                )}
+                                <FlexItem>
+                                  <Label
+                                    isCompact
+                                    color={buildComplete ? 'green' : buildFailed ? 'red' : 'blue'}
+                                  >
+                                    {buildPhase}
+                                  </Label>
+                                </FlexItem>
+                                <FlexItem>
+                                  <ResourceLink
+                                    groupVersionKind={BuildGVK}
+                                    name={latestBuild.metadata?.name}
+                                    namespace={OSC_NAMESPACE}
+                                    inline
+                                  />
+                                </FlexItem>
+                              </Flex>
+                              {buildComplete && (
+                                <Alert
+                                  variant="success"
+                                  isInline
+                                  isPlain
+                                  title={t('Image built — referenced in Step 2 below.')}
+                                  className="osc-openshift-console-plugin__mt"
+                                />
+                              )}
+                              {buildFailed && (
+                                <Alert
+                                  variant="warning"
+                                  isInline
+                                  isPlain
+                                  title={t('Build {{phase}} — open it above to read the logs.', {
+                                    phase: buildPhase,
+                                  })}
+                                  className="osc-openshift-console-plugin__mt"
+                                />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                      <li className="osc-openshift-console-plugin__step">
+                        <span className="osc-openshift-console-plugin__step-num" aria-hidden="true">
+                          2
+                        </span>
+                        <div className="osc-openshift-console-plugin__step-body">
+                          <div className="osc-openshift-console-plugin__step-title">
+                            {t('Reference it in Step 2')}
+                          </div>
+                          <Content component="p" className="osc-openshift-console-plugin__muted">
+                            {t(
+                              'The image lands in the internal registry at the address below — it fills in automatically when the build finishes.',
+                            )}
+                          </Content>
                           <div className="osc-openshift-console-plugin__step-cmd">
                             <ClipboardCopy isReadOnly>{CLUSTER_IMAGE_REF}</ClipboardCopy>
                             <Button
@@ -366,13 +578,14 @@ const PodVmImageConfigWizard: FC = () => {
                               {t('Use this image location')}
                             </Button>
                           </div>
-                        }
-                      >
-                        {t(
-                          'The build stores the image in the internal registry at the address below. Use it as your Pod VM image URI:',
-                        )}
-                      </BuildStep>
+                        </div>
+                      </li>
                     </ol>
+                    <ExpandableSection toggleText={t('Prefer the command line?')}>
+                      <ClipboardCopy isReadOnly isExpanded variant="expansion">
+                        {CLUSTER_BUILD}
+                      </ClipboardCopy>
+                    </ExpandableSection>
                     <Content
                       component="small"
                       className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt"
