@@ -121,3 +121,62 @@
 .osc-openshift-console-plugin__icon-info {
   color: var(--pf-t--global--icon--color--status--info--default);
 }
+
+/* Numbered, connected step list used by the build guides. */
+.osc-openshift-console-plugin__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.osc-openshift-console-plugin__step {
+  position: relative;
+  display: flex;
+  gap: var(--pf-t--global--spacer--md, 1rem);
+  padding-block-end: var(--pf-t--global--spacer--lg, 1.5rem);
+}
+
+.osc-openshift-console-plugin__step:last-child {
+  padding-block-end: 0;
+}
+
+/* Vertical connector from this step's number down to the next. */
+.osc-openshift-console-plugin__step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  inset-block: 1.75rem 0;
+  inset-inline-start: 0.875rem;
+  inline-size: var(--pf-t--global--border--width--regular, 1px);
+  background-color: var(--pf-t--global--border--color--default);
+  transform: translateX(-50%);
+}
+
+.osc-openshift-console-plugin__step-num {
+  flex: 0 0 auto;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: var(--pf-t--global--border--width--regular, 1px) solid
+    var(--pf-t--global--border--color--brand--default);
+  color: var(--pf-t--global--border--color--brand--default);
+  font-weight: var(--pf-t--global--font--weight--body--bold, 700);
+  font-size: var(--pf-t--global--font--size--sm, 0.875rem);
+  background-color: var(--pf-t--global--background--color--primary--default);
+}
+
+.osc-openshift-console-plugin__step-body {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.osc-openshift-console-plugin__step-title {
+  font-weight: var(--pf-t--global--font--weight--body--bold, 700);
+  margin-block-end: var(--pf-t--global--spacer--xs, 0.25rem);
+}
+
+.osc-openshift-console-plugin__step-cmd {
+  margin-block-start: var(--pf-t--global--spacer--sm, 0.5rem);
+}
