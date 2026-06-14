@@ -58,5 +58,43 @@ export const DeploymentModel: K8sModel = {
 /** Where OSC operator resources live. */
 export const OSC_NAMESPACE = 'openshift-sandboxed-containers-operator';
 export const PEER_PODS_CM = 'peer-pods-cm';
+export const PODVM_IMAGE_CM = 'podvm-image-cm';
+export const PEER_PODS_SECRET = 'peer-pods-secret';
 export const CAA_DAEMONSET = 'osc-caa-ds';
 export const KATACONFIG_NAME = 'example-kataconfig';
+export const MACHINE_API_NAMESPACE = 'openshift-machine-api';
+
+export const ConfigMapModel: K8sModel = {
+  apiVersion: 'v1',
+  kind: 'ConfigMap',
+  plural: 'configmaps',
+  namespaced: true,
+  abbr: 'CM',
+  label: 'ConfigMap',
+  labelPlural: 'ConfigMaps',
+};
+
+/** kataconfiguration.openshift.io/v1 KataConfig — cluster-scoped. */
+export const KataConfigModel: K8sModel = {
+  apiGroup: 'kataconfiguration.openshift.io',
+  apiVersion: 'v1',
+  kind: 'KataConfig',
+  plural: 'kataconfigs',
+  namespaced: false,
+  abbr: 'KC',
+  label: 'KataConfig',
+  labelPlural: 'KataConfigs',
+  crd: true,
+};
+
+export const InfrastructureGVK: K8sGroupVersionKind = {
+  group: 'config.openshift.io',
+  version: 'v1',
+  kind: 'Infrastructure',
+};
+
+export const MachineSetGVK: K8sGroupVersionKind = {
+  group: 'machine.openshift.io',
+  version: 'v1beta1',
+  kind: 'MachineSet',
+};

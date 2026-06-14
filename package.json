@@ -84,7 +84,11 @@
       "SandboxWorkloadsList": "./components/SandboxWorkloadsList",
       "CreateSandboxWorkload": "./components/CreateSandboxWorkload",
       "SandboxWorkloadDetail": "./components/SandboxWorkloadDetail",
-      "RuntimeClassesList": "./components/RuntimeClassesList"
+      "RuntimeClassesList": "./components/RuntimeClassesList",
+      "OscSetup": "./components/OscSetup",
+      "KataConfigWizard": "./components/KataConfigWizard",
+      "PeerPodsConfigWizard": "./components/PeerPodsConfigWizard",
+      "PodVmImageConfigWizard": "./components/PodVmImageConfigWizard"
     },
     "dependencies": {
       "@console/pluginAPI": "^4.21.0"

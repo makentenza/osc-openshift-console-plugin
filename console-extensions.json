@@ -34,6 +34,18 @@
   {
     "type": "console.navigation/href",
     "properties": {
+      "id": "sandboxes-setup",
+      "section": "sandboxes",
+      "name": "%plugin__osc-openshift-console-plugin~Setup%",
+      "href": "/sandboxes/setup",
+      "perspective": "admin",
+      "startsWith": ["sandboxes/setup"]
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.navigation/href",
+    "properties": {
       "id": "sandboxes-workloads",
       "section": "sandboxes",
       "name": "%plugin__osc-openshift-console-plugin~Workloads%",
@@ -96,6 +108,42 @@
       "exact": true,
       "path": "/sandboxes/runtime-classes",
       "component": { "$codeRef": "RuntimeClassesList" }
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/sandboxes/setup",
+      "component": { "$codeRef": "OscSetup" }
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/sandboxes/setup/kataconfig",
+      "component": { "$codeRef": "KataConfigWizard" }
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/sandboxes/setup/peer-pods",
+      "component": { "$codeRef": "PeerPodsConfigWizard" }
+    },
+    "flags": { "required": ["OSC_KATACONFIG"] }
+  },
+  {
+    "type": "console.page/route",
+    "properties": {
+      "exact": true,
+      "path": "/sandboxes/setup/podvm-image",
+      "component": { "$codeRef": "PodVmImageConfigWizard" }
     },
     "flags": { "required": ["OSC_KATACONFIG"] }
   }
