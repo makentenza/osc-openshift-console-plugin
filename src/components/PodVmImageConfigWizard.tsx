@@ -47,13 +47,14 @@ import {
   BuildConfigModel,
   BuildGVK,
   ConfigMapModel,
+  DeploymentGVK,
   ImageStreamModel,
   OSC_NAMESPACE,
   PODVM_BUILDCONFIG,
   PODVM_IMAGE_CM,
 } from '../k8s/resources';
 import type { ConfigMapKind } from '../k8s/types';
-import { usePodvmImageCm } from '../k8s/setup';
+import { usePeerPodsCm, usePodvmImageCm } from '../k8s/setup';
 import { toYaml } from '../utils/yaml';
 import './sandbox.css';
 
@@ -84,30 +85,50 @@ podman build -t "\${IMG}" -f Containerfile.rhel .`;
 const WS_PUSH = `podman login <registry>
 podman push "\${IMG}"`;
 
-// --- In-cluster build (OpenShift BuildConfig, no local tooling) ---
-const CLUSTER_BUILD = `oc apply -f - <<'EOF'
-apiVersion: build.openshift.io/v1
-kind: BuildConfig
-metadata:
-  name: podvm-bootc
-  namespace: openshift-sandboxed-containers-operator
-spec:
-  source:
-    type: Git
-    git:
-      uri: https://github.com/openshift/sandboxed-containers-operator.git
-    contextDir: config/peerpods/podvm/bootc
-  strategy:
-    type: Docker
-    dockerStrategy:
-      dockerfilePath: Containerfile.rhel
-  output:
-    to:
-      kind: ImageStreamTag
-      name: podvm-bootc:latest
-EOF
+// --- In-cluster build (OpenShift BuildConfig from Red Hat's upstream Containerfile) ---
 
-oc start-build podvm-bootc -n openshift-sandboxed-containers-operator --follow`;
+/** Operator deployment, typed just enough to read the payload image from its env. */
+type OperatorDeploymentKind = K8sResourceCommon & {
+  spec?: {
+    template?: {
+      spec?: { containers?: { name?: string; env?: { name?: string; value?: string }[] }[] };
+    };
+  };
+};
+
+const PODVM_GIT_URI = 'https://github.com/openshift/sandboxed-containers-operator.git';
+const PODVM_CONTEXT_DIR = 'config/peerpods/podvm/bootc';
+const PODVM_BOOTC_BASE = 'registry.redhat.io/rhel9/rhel-bootc:9.8-1779929863';
+
+// Red Hat's upstream Containerfile.rhel hardcodes a payload tag that isn't published
+// (osc-podvm-payload-rhel9:<ver>) and an unquoted systemd unit path (\x2d) that /bin/sh
+// mangles, so it can't be built as-is. We reproduce it here with the payload pinned to the
+// operator's own image and the mount-unit path single-quoted, so the in-cluster build works.
+const podvmDockerfile = (payloadImage: string): string => `FROM ${payloadImage} as payload
+FROM ${PODVM_BOOTC_BASE} as podvm-bootc
+ARG ORG_ID
+ARG ACTIVATION_KEY
+ARG CLOUD_PROVIDER
+RUN if [[ -n "\${ACTIVATION_KEY}" && -n "\${ORG_ID}" ]]; then \\
+    subscription-manager register --org=\${ORG_ID} --activationkey=\${ACTIVATION_KEY}; \\
+    fi
+COPY etc /etc
+COPY usr /usr
+RUN if [[ "\${CLOUD_PROVIDER}" == "azure" ]]; then \\
+    dnf install -y afterburn && dnf clean all && \\
+    ln -s ../afterburn-checkin.service /etc/systemd/system/multi-user.target.wants/afterburn-checkin.service; \\
+    fi
+RUN if [[ "\${CLOUD_PROVIDER}" == "libvirt" ]]; then \\
+    dnf install -y cloud-init && dnf clean all; \\
+    fi
+COPY --from=payload /podvm-binaries.tar.gz /podvm-binaries.tar.gz
+COPY --from=payload /pause-bundle.tar.gz /pause-bundle.tar.gz
+RUN tar -xzvf podvm-binaries.tar.gz -C / && rm /podvm-binaries.tar.gz && \\
+    tar -xzvf pause-bundle.tar.gz -C / && rm /pause-bundle.tar.gz && \\
+    sed -i 's#What=/kata-containers#What=/var/kata-containers#g' '/etc/systemd/system/run-kata\\x2dcontainers.mount'
+FROM podvm-bootc as default-target
+RUN bootc container lint
+`;
 
 const CLUSTER_IMAGE_REF =
   'image-registry.openshift-image-registry.svc:5000/openshift-sandboxed-containers-operator/podvm-bootc:latest';
@@ -131,22 +152,25 @@ const podvmImageStream: K8sResourceCommon = {
   metadata: { name: PODVM_BUILDCONFIG, namespace: OSC_NAMESPACE },
 };
 
-const podvmBuildConfig: K8sResourceCommon & { spec: Record<string, unknown> } = {
+const makePodvmBuildConfig = (
+  payloadImage: string,
+): K8sResourceCommon & { spec: Record<string, unknown> } => ({
   apiVersion: 'build.openshift.io/v1',
   kind: 'BuildConfig',
   metadata: { name: PODVM_BUILDCONFIG, namespace: OSC_NAMESPACE },
   spec: {
     source: {
       type: 'Git',
-      git: { uri: 'https://github.com/openshift/sandboxed-containers-operator.git' },
-      contextDir: 'config/peerpods/podvm/bootc',
+      git: { uri: PODVM_GIT_URI },
+      contextDir: PODVM_CONTEXT_DIR,
+      dockerfile: podvmDockerfile(payloadImage),
     },
-    strategy: { type: 'Docker', dockerStrategy: { dockerfilePath: 'Containerfile.rhel' } },
+    strategy: { type: 'Docker', dockerStrategy: {} },
     output: { to: { kind: 'ImageStreamTag', name: `${PODVM_BUILDCONFIG}:latest` } },
     // A ConfigChange trigger starts the first build automatically when the BuildConfig is created.
     triggers: [{ type: 'ConfigChange' }],
   },
-};
+});
 
 const podvmBuildRequest: K8sResourceCommon & { triggeredBy: unknown[] } = {
   apiVersion: 'build.openshift.io/v1',
@@ -193,6 +217,7 @@ const PodVmImageConfigWizard: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const navigate = useNavigate();
   const [existing, loaded] = usePodvmImageCm();
+  const [peerPodsCm] = usePeerPodsCm();
 
   const d = existing?.data ?? {};
   const [imageType] = useState(d.IMAGE_TYPE ?? 'pre-built');
@@ -220,6 +245,20 @@ const PodVmImageConfigWizard: FC = () => {
   // watch its status. No oc / podman needed.
   const [buildBusy, setBuildBusy] = useState(false);
   const [buildError, setBuildError] = useState<string | undefined>();
+  // Read the payload image the installed operator uses, so the build pins the same one
+  // instead of the upstream Containerfile's unpublished tag.
+  const [operatorDeploy] = useK8sWatchResource<OperatorDeploymentKind>({
+    groupVersionKind: DeploymentGVK,
+    namespace: OSC_NAMESPACE,
+    name: 'controller-manager',
+  });
+  const payloadImage = useMemo(
+    () =>
+      (operatorDeploy?.spec?.template?.spec?.containers ?? [])
+        .flatMap((c) => c.env ?? [])
+        .find((e) => e.name === 'RELATED_IMAGE_PODVM_PAYLOAD')?.value,
+    [operatorDeploy],
+  );
   const [builds] = useK8sWatchResource<BuildKind[]>({
     groupVersionKind: BuildGVK,
     namespace: OSC_NAMESPACE,
@@ -238,6 +277,39 @@ const PodVmImageConfigWizard: FC = () => {
   const buildFailed = FAILED_PHASES.includes(buildPhase ?? '');
   const buildComplete = buildPhase === 'Complete';
 
+  // Drive the overview stepper from real state so it actually advances — and reaches
+  // "Operator finishes" (when the operator writes PODVM_IMAGE_NAME back into
+  // peer-pods-cm) — instead of sitting on a perpetual, confusing "pending" final step.
+  const operatorDone = Boolean(peerPodsCm?.data?.PODVM_IMAGE_NAME);
+  const imageBuilt = buildComplete || uri.trim() !== '';
+  const flowSteps = [
+    {
+      id: 'flow-build',
+      title: t('Build the image'),
+      description: t('On your laptop or in the cluster'),
+      done: imageBuilt,
+    },
+    {
+      id: 'flow-store',
+      title: t('Store in a registry'),
+      description: t('So the cluster can pull it'),
+      done: imageBuilt,
+    },
+    {
+      id: 'flow-ref',
+      title: t('Reference it here'),
+      description: t('Paste the image location below'),
+      done: Boolean(existing),
+    },
+    {
+      id: 'flow-operator',
+      title: t('Operator finishes'),
+      description: t('Creates the cloud image & updates peer-pods-cm'),
+      done: operatorDone,
+    },
+  ];
+  const currentFlowIdx = flowSteps.findIndex((s) => !s.done);
+
   // Once the in-cluster build finishes, prefill the image URI (only if the user hasn't typed one).
   const prefilled = useRef(false);
   useEffect(() => {
@@ -248,6 +320,7 @@ const PodVmImageConfigWizard: FC = () => {
   }, [buildComplete, uri]);
 
   const startClusterBuild = async () => {
+    if (!payloadImage) return;
     setBuildBusy(true);
     setBuildError(undefined);
     try {
@@ -258,7 +331,7 @@ const PodVmImageConfigWizard: FC = () => {
       }
       let created = true;
       try {
-        await k8sCreate({ model: BuildConfigModel, data: podvmBuildConfig });
+        await k8sCreate({ model: BuildConfigModel, data: makePodvmBuildConfig(payloadImage) });
       } catch (e) {
         if (isAlreadyExists(e)) created = false;
         else throw e;
@@ -337,39 +410,18 @@ const PodVmImageConfigWizard: FC = () => {
               isCenterAligned
               className="osc-openshift-console-plugin__mt"
             >
-              <ProgressStep
-                variant="info"
-                id="flow-build"
-                titleId="flow-build-title"
-                description={t('On your laptop or in the cluster')}
-              >
-                {t('Build the image')}
-              </ProgressStep>
-              <ProgressStep
-                variant="info"
-                id="flow-store"
-                titleId="flow-store-title"
-                description={t('So the cluster can pull it')}
-              >
-                {t('Store in a registry')}
-              </ProgressStep>
-              <ProgressStep
-                isCurrent
-                variant="info"
-                id="flow-ref"
-                titleId="flow-ref-title"
-                description={t('Paste the image location below')}
-              >
-                {t('Reference it here')}
-              </ProgressStep>
-              <ProgressStep
-                variant="pending"
-                id="flow-operator"
-                titleId="flow-operator-title"
-                description={t('Creates the cloud image & updates peer-pods-cm')}
-              >
-                {t('Operator finishes')}
-              </ProgressStep>
+              {flowSteps.map((s, i) => (
+                <ProgressStep
+                  key={s.id}
+                  id={s.id}
+                  titleId={`${s.id}-title`}
+                  variant={s.done ? 'success' : i === currentFlowIdx ? 'info' : 'pending'}
+                  isCurrent={i === currentFlowIdx}
+                  description={s.description}
+                >
+                  {s.title}
+                </ProgressStep>
+              ))}
             </ProgressStepper>
           </CardBody>
         </Card>
@@ -480,7 +532,7 @@ const PodVmImageConfigWizard: FC = () => {
                               variant="primary"
                               onClick={() => void startClusterBuild()}
                               isLoading={buildBusy}
-                              isDisabled={buildBusy || buildRunning}
+                              isDisabled={buildBusy || buildRunning || !payloadImage}
                             >
                               {buildRunning
                                 ? t('Building…')
@@ -488,6 +540,14 @@ const PodVmImageConfigWizard: FC = () => {
                                   ? t('Rebuild in the cluster')
                                   : t('Build in the cluster')}
                             </Button>
+                            {!payloadImage && (
+                              <Content
+                                component="small"
+                                className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt"
+                              >
+                                {t('Detecting the operator’s pod VM payload image…')}
+                              </Content>
+                            )}
                           </div>
                           {buildError && (
                             <Alert
@@ -581,17 +641,12 @@ const PodVmImageConfigWizard: FC = () => {
                         </div>
                       </li>
                     </ol>
-                    <ExpandableSection toggleText={t('Prefer the command line?')}>
-                      <ClipboardCopy isReadOnly isExpanded variant="expansion">
-                        {CLUSTER_BUILD}
-                      </ClipboardCopy>
-                    </ExpandableSection>
                     <Content
                       component="small"
                       className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt"
                     >
                       {t(
-                        'If the build fails while pulling the OSC payload, the development Containerfile may need its payload image pinned to your installed operator’s digest — see the OpenShift sandboxed containers documentation.',
+                        'The image is built from Red Hat’s Containerfile with the payload pinned to your installed operator. If a build fails, open it above to read the logs.',
                       )}
                     </Content>
                   </>
