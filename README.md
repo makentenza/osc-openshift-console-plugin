@@ -24,6 +24,20 @@ The whole menu is gated behind a `console.flag/model` flag on the `KataConfig` C
 appears when OpenShift sandboxed containers is installed. Data is 100% Kubernetes API — no cloud
 provider credentials required.
 
+## Screenshots
+
+### Overview
+![Sandboxes overview](docs/images/01_osc_overview.png)
+
+### Workloads
+![Sandboxed workloads](docs/images/02_osc_workloads.png)
+
+### Setup
+![Sandboxes setup](docs/images/03_osc_setup.png)
+
+### Runtime classes
+![Sandbox runtime classes](docs/images/04_osc_runtimeclasses.png)
+
 ## Stack
 
 OCP **4.21**: React 17, PatternFly 6.2, `@openshift-console/dynamic-plugin-sdk` `4.21-latest`,
