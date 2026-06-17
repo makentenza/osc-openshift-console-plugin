@@ -384,7 +384,7 @@ const PodVmImageConfigWizard: FC = () => {
       } else {
         await k8sCreate({ model: ConfigMapModel, data: cm });
       }
-      navigate('/sandboxes/setup');
+      void navigate('/sandboxes/setup');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -815,7 +815,7 @@ const PodVmImageConfigWizard: FC = () => {
                     <Button
                       variant="link"
                       onClick={() => {
-                        navigate('/sandboxes/setup');
+                        void navigate('/sandboxes/setup');
                       }}
                     >
                       {t('Cancel')}

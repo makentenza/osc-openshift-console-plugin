@@ -191,11 +191,11 @@ const SandboxWorkloadsList: FC = () => {
     const field = SORTABLE_FIELDS[sortBy.index];
     if (!field) return filtered;
 
-    const sorted = [...filtered].sort((a, b) => {
-      const aVal = String(a[field] ?? '');
-      const bVal = String(b[field] ?? '');
-      return aVal.localeCompare(bVal);
-    });
+    const cell = (w: SandboxWorkload): string => {
+      const v = w[field];
+      return typeof v === 'string' || typeof v === 'number' ? String(v) : '';
+    };
+    const sorted = [...filtered].sort((a, b) => cell(a).localeCompare(cell(b)));
     return sortBy.direction === 'desc' ? sorted.reverse() : sorted;
   }, [workloads, text, isolation, nsFilter, statusFilter, rcFilter, sortBy]);
 

@@ -68,7 +68,7 @@ const KataConfigWizard: FC = () => {
     setError(undefined);
     try {
       await k8sCreate({ model: KataConfigModel, data: manifest });
-      navigate('/sandboxes');
+      void navigate('/sandboxes');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -205,7 +205,7 @@ const KataConfigWizard: FC = () => {
                     <Button
                       variant="link"
                       onClick={() => {
-                        navigate('/sandboxes/setup');
+                        void navigate('/sandboxes/setup');
                       }}
                     >
                       {t('Cancel')}

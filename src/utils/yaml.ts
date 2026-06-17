@@ -15,7 +15,7 @@ const pad = (n: number): string => '  '.repeat(n);
 const isNonEmptyComposite = (v: unknown): boolean =>
   v !== null &&
   typeof v === 'object' &&
-  (Array.isArray(v) ? v.length > 0 : Object.keys(v as object).length > 0);
+  (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0);
 
 export const toYaml = (value: unknown, indent = 0): string => {
   if (value === null || value === undefined) return 'null';

@@ -135,7 +135,7 @@ const PeerPodsConfigWizard: FC = () => {
   const fieldVal = (key: string): string => {
     if (values[key] !== undefined) return values[key];
     if (existing?.data?.[key] !== undefined) return existing.data[key];
-    if (provider === 'gcp' && gcpPrefill[key]) return gcpPrefill[key] as string;
+    if (provider === 'gcp' && gcpPrefill[key]) return gcpPrefill[key];
     return DEFAULTS[key] ?? '';
   };
   const set = (key: string, v: string) => {
@@ -176,7 +176,7 @@ const PeerPodsConfigWizard: FC = () => {
       } else {
         await k8sCreate({ model: ConfigMapModel, data: cm });
       }
-      navigate('/sandboxes/setup');
+      void navigate('/sandboxes/setup');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -373,7 +373,7 @@ const PeerPodsConfigWizard: FC = () => {
                     <Button
                       variant="link"
                       onClick={() => {
-                        navigate('/sandboxes/setup');
+                        void navigate('/sandboxes/setup');
                       }}
                     >
                       {t('Cancel')}

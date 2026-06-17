@@ -19,12 +19,12 @@ export type InfrastructureKind = K8sResourceCommon & {
   };
 };
 
-type GcpProviderSpec = {
+interface GcpProviderSpec {
   projectID?: string;
   zone?: string;
   machineType?: string;
   networkInterfaces?: { network?: string; subnetwork?: string }[];
-};
+}
 
 export type MachineSetKind = K8sResourceCommon & {
   spec?: { template?: { spec?: { providerSpec?: { value?: GcpProviderSpec } } } };

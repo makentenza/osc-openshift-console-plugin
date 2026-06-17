@@ -3,6 +3,8 @@ import tseslint from 'typescript-eslint';
 import react from 'eslint-plugin-react';
 import prettier from 'eslint-plugin-prettier/recommended';
 import reactHooks from 'eslint-plugin-react-hooks';
+import importX from 'eslint-plugin-import-x';
+import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import jest from 'eslint-plugin-jest';
 import testingLibrary from 'eslint-plugin-testing-library';
 import globals from 'globals';
@@ -12,25 +14,30 @@ export default tseslint.config(
     ignores: ['dist/', 'node_modules/'],
   },
   eslint.configs.recommended,
-  tseslint.configs.recommended,
-  reactHooks.configs.flat.recommended,
+  tseslint.configs.strictTypeChecked,
+  tseslint.configs.stylisticTypeChecked,
+  reactHooks.configs.flat['recommended-latest'],
+  importX.flatConfigs.recommended,
+  importX.flatConfigs.typescript,
+  {
+    settings: {
+      'import-x/resolver-next': [createTypeScriptImportResolver()],
+    },
+  },
   {
     files: ['src/**/*.{ts,tsx}'],
     plugins: {
       react,
     },
     rules: {
-      ...eslint.configs.recommended.rules,
-      ...tseslint.configs.recommended.rules,
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
-      // The base rule false-positives on TS type-signature param names; the TS
-      // compiler (noUnusedLocals/Parameters) covers real unused-variable cases.
-      'no-unused-vars': 'off',
+      '@typescript-eslint/consistent-type-imports': 'error',
     },
     languageOptions: {
       globals: globals.browser,
       parserOptions: {
+        projectService: true,
         ecmaFeatures: {
           jsx: true,
         },
@@ -40,6 +47,26 @@ export default tseslint.config(
       react: {
         version: 'detect',
       },
+    },
+  },
+  {
+    // strictTypeChecked assumes a fully-typed codebase. The console dynamic-plugin
+    // SDK exposes many values as `any` (k8s objects, watch-result tuples), so the
+    // unsafe-*/no-unnecessary-condition/restrict-template rules fire on defensive,
+    // correct code at that untyped boundary. Relax those; keep the rest of strict
+    // (floating/misused promises, nullish-coalescing, etc. still catch real bugs).
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/restrict-template-expressions': 'off',
+      // The codebase intentionally uses `str || fallback` to treat '' like missing
+      // (namespace/name defaults); allow that, keep ?? enforcement for numbers.
+      '@typescript-eslint/prefer-nullish-coalescing': ['error', { ignorePrimitives: { string: true } }],
     },
   },
   {
