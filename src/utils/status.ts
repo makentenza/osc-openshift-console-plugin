@@ -1,4 +1,4 @@
-import type { PodKind } from '../k8s/types';
+import type { KataConfigKind, PodKind } from '../k8s/types';
 
 /**
  * Console-style display status: surface container waiting/terminated reasons
@@ -41,4 +41,42 @@ export const statusCategory = (status: string): StatusCategory => {
 export const statusColor = (status: string): 'green' | 'orange' | 'red' => {
   const cat = statusCategory(status);
   return cat === 'Healthy' ? 'green' : cat === 'Pending' ? 'orange' : 'red';
+};
+
+export type KataPhase = 'absent' | 'installing' | 'ready' | 'failed';
+
+export interface KataReadiness {
+  phase: KataPhase;
+  /** True only when the kata runtime is actually installed and registered, not merely created. */
+  ready: boolean;
+  readyNodes: number;
+  totalNodes: number;
+  failedNodes: number;
+}
+
+/**
+ * Derive the real install state of a KataConfig. Creating the object only *starts* a rollout that
+ * reboots each worker to install the kata RPM, so the setup checklist must not call the step "done"
+ * until the runtime is genuinely ready — the object exists long before workloads can run (issue #6).
+ *
+ * Ready = the `InProgress` condition has settled to False, every counted node is installed, and the
+ * runtime classes are registered. A node in `failedToInstall` after the rollout settles is a failure.
+ */
+export const kataConfigReadiness = (kc?: KataConfigKind): KataReadiness => {
+  if (!kc) return { phase: 'absent', ready: false, readyNodes: 0, totalNodes: 0, failedNodes: 0 };
+  const nodes = kc.status?.kataNodes;
+  const totalNodes = nodes?.nodeCount ?? 0;
+  const readyNodes = nodes?.readyNodeCount ?? 0;
+  const failedNodes = nodes?.failedToInstall?.length ?? 0;
+  const inProgress = kc.status?.conditions?.find((c) => c.type === 'InProgress')?.status;
+  const runtimeClasses = kc.status?.runtimeClasses?.length ?? 0;
+
+  const base = { readyNodes, totalNodes, failedNodes };
+  // Still churning: keep it "installing" even if a node transiently shows up as failed.
+  if (inProgress === 'True') return { phase: 'installing', ready: false, ...base };
+  if (failedNodes > 0) return { phase: 'failed', ready: false, ...base };
+  if (totalNodes > 0 && readyNodes >= totalNodes && runtimeClasses > 0)
+    return { phase: 'ready', ready: true, ...base };
+  // Object exists but status hasn't populated yet (nascent) — treat as installing, never ready.
+  return { phase: 'installing', ready: false, ...base };
 };

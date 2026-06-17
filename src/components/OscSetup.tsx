@@ -8,6 +8,7 @@ import {
   FlexItem,
   Label,
   PageSection,
+  Spinner,
 } from '@patternfly/react-core';
 import {
   ArrowRightIcon,
@@ -22,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { useKataConfig } from '../k8s/hooks';
 import { usePeerPodsCm, usePodvmImageCm, useClusterPlatform } from '../k8s/setup';
 import { KataConfigGVK } from '../k8s/resources';
+import { kataConfigReadiness } from '../utils/status';
 import OpenPeerPodsFirewall from './OpenPeerPodsFirewall';
 import './sandbox.css';
 
@@ -64,6 +66,7 @@ const OscSetup: FC = () => {
   const ppData = peerPodsCm?.data ?? {};
   const ppProvider = ppData.CLOUD_PROVIDER;
   const peerPodsEnabled = Boolean(kataConfig?.spec?.enablePeerPods);
+  const kata = kataConfigReadiness(kataConfig);
   const podvmImageName = ppData.PODVM_IMAGE_NAME ?? ppData.PODVM_AMI_ID ?? ppData.AZURE_IMAGE_ID;
   const podvmImageReady = Boolean(podvmImageCm) || Boolean(podvmImageName);
 
@@ -106,42 +109,96 @@ const OscSetup: FC = () => {
     },
     {
       title: t('KataConfig'),
-      status: kataConfig ? 'done' : 'todo',
-      detail: kataConfig ? (
-        <Flex
-          alignItems={{ default: 'alignItemsCenter' }}
-          gap={{ default: 'gapSm' }}
-          flexWrap={{ default: 'wrap' }}
-        >
-          <FlexItem>
-            <ResourceLink
-              groupVersionKind={KataConfigGVK}
-              name={kataConfig.metadata?.name}
-              inline
-            />
-          </FlexItem>
-          <FlexItem>
-            <Label isCompact color={peerPodsEnabled ? 'green' : 'orange'}>
-              {peerPodsEnabled ? t('peer pods enabled') : t('peer pods off')}
-            </Label>
-          </FlexItem>
-        </Flex>
-      ) : (
-        t(
-          'Install the kata-remote runtime on your workers by creating a KataConfig with peer pods enabled. This reboots the nodes.',
-        )
-      ),
-      action: kataConfig
-        ? undefined
-        : { label: t('Create KataConfig'), href: '/sandboxes/setup/kataconfig' },
+      // Creating the object only starts a node-by-node rollout — stay "in progress" (not green)
+      // until the runtime is actually installed and registered (issue #6).
+      status:
+        kata.phase === 'absent'
+          ? 'todo'
+          : kata.phase === 'ready'
+            ? 'done'
+            : kata.phase === 'failed'
+              ? 'warn'
+              : 'info',
+      detail:
+        kata.phase === 'absent' ? (
+          t(
+            'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. Each node reboots to install it, so this takes a few minutes.',
+          )
+        ) : (
+          <>
+            <Flex
+              alignItems={{ default: 'alignItemsCenter' }}
+              gap={{ default: 'gapSm' }}
+              flexWrap={{ default: 'wrap' }}
+            >
+              <FlexItem>
+                <ResourceLink
+                  groupVersionKind={KataConfigGVK}
+                  name={kataConfig?.metadata?.name}
+                  inline
+                />
+              </FlexItem>
+              {kata.phase === 'installing' && (
+                <>
+                  <FlexItem>
+                    <Spinner size="md" aria-label={t('Installing the kata runtime')} />
+                  </FlexItem>
+                  <FlexItem>
+                    <Label isCompact color="blue">
+                      {kata.totalNodes > 0
+                        ? t('installing — {{ready}}/{{total}} nodes ready', {
+                            ready: kata.readyNodes,
+                            total: kata.totalNodes,
+                          })
+                        : t('installing…')}
+                    </Label>
+                  </FlexItem>
+                </>
+              )}
+              {kata.phase === 'ready' && (
+                <FlexItem>
+                  <Label isCompact color="green">
+                    {t('runtime ready')}
+                  </Label>
+                </FlexItem>
+              )}
+              {kata.phase === 'failed' && (
+                <FlexItem>
+                  <Label isCompact color="red">
+                    {t('install failed on {{nodes}} node(s)', { nodes: kata.failedNodes })}
+                  </Label>
+                </FlexItem>
+              )}
+              <FlexItem>
+                <Label isCompact color={peerPodsEnabled ? 'green' : 'orange'}>
+                  {peerPodsEnabled ? t('peer pods enabled') : t('peer pods off')}
+                </Label>
+              </FlexItem>
+            </Flex>
+            {kata.phase === 'installing' && (
+              <div className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt">
+                {t(
+                  'Nodes reboot during install, so this can take several minutes depending on how many workers you have. The step turns green once the runtime is ready.',
+                )}
+              </div>
+            )}
+          </>
+        ),
+      action:
+        kata.phase === 'absent'
+          ? { label: t('Create KataConfig'), href: '/sandboxes/setup/kataconfig' }
+          : undefined,
     },
     {
       title: t('Run a sandboxed workload'),
-      status: kataConfig ? 'info' : 'todo',
-      detail: kataConfig
+      // Only offer this once the runtime is genuinely ready — not just because the object exists.
+      status: kata.ready ? 'info' : 'todo',
+      detail: kata.ready
         ? t('Deploy a workload with runtimeClassName: kata-remote to run it in a pod VM.')
-        : t('Available once the KataConfig install completes and kata-remote is registered.'),
-      action: kataConfig
+        : kata.phase === 'absent'
+          ? t('Available once the KataConfig install completes and kata-remote is registered.')
+          : t('Waiting for the kata runtime to finish installing before workloads can run.'),
+      action: kata.ready
         ? { label: t('Create workload'), href: '/sandboxes/workloads/~new' }
         : undefined,
     },
