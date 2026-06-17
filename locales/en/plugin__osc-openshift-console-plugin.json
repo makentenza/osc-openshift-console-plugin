@@ -3,6 +3,7 @@
   "{{count}} sandboxed workloads are hidden by the active filters.": "{{count}} sandboxed workloads are hidden by the active filters.",
   "{{count}} sandboxed workloads are hidden by the active filters._one": "{{count}} sandboxed workloads are hidden by the active filters._one",
   "{{count}} sandboxed workloads are hidden by the active filters._other": "{{count}} sandboxed workloads are hidden by the active filters._other",
+  "A {{kind}} named \"{{name}}\" already exists in {{namespace}}. Pick a different name.": "A {{kind}} named \"{{name}}\" already exists in {{namespace}}. Pick a different name.",
   "Actions": "Actions",
   "Active workloads": "Active workloads",
   "Advanced options": "Advanced options",

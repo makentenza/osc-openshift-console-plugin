@@ -42,15 +42,18 @@ import { useTranslation } from 'react-i18next';
 import { useRuntimeClasses } from '../k8s/hooks';
 import {
   ConfigMapGVK,
+  DeploymentGVK,
   DeploymentModel,
   NamespaceGVK,
   OSC_NAMESPACE,
   PEER_PODS_CM,
+  PodGVK,
   PodModel,
 } from '../k8s/resources';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 import type { ConfigMapKind, RuntimeClassKind } from '../k8s/types';
 import { isSandboxRuntimeClass, isolationForHandler, runtimeClassCatalog } from '../utils/runtime';
+import { suggestWorkloadName, workloadNameExists } from '../utils/workload';
 import { toYaml } from '../utils/yaml';
 import { IsolationLabel } from './IsolationLabel';
 import './sandbox.css';
@@ -138,9 +141,9 @@ const CreateSandboxWorkload: FC = () => {
   const defaultMachineType =
     peerPodsCm?.data?.GCP_MACHINE_TYPE ?? peerPodsCm?.data?.PODVM_INSTANCE_TYPE;
 
-  const [form, setForm] = useState<WorkloadForm>({
+  const [form, setForm] = useState<WorkloadForm>(() => ({
     kind: 'Pod',
-    name: 'my-sandbox',
+    name: suggestWorkloadName(),
     namespace: 'default',
     runtimeClass: '',
     image: 'registry.access.redhat.com/ubi9/ubi:latest',
@@ -149,13 +152,33 @@ const CreateSandboxWorkload: FC = () => {
     memory: '',
     replicas: 1,
     machineType: '',
-  });
+  }));
   const [nsOpen, setNsOpen] = useState(false);
   const [error, setError] = useState<string>();
 
   const set = (patch: Partial<WorkloadForm>) => {
     setForm((f) => ({ ...f, ...patch }));
   };
+
+  // Live duplicate-name check: a workload that already exists 409s on create, so warn now instead
+  // of failing at the final step and forcing a roll-back (issue #12).
+  const [existingPods] = useK8sWatchResource<K8sResourceCommon[]>({
+    groupVersionKind: PodGVK,
+    namespace: form.namespace,
+    isList: true,
+  });
+  const [existingDeployments] = useK8sWatchResource<K8sResourceCommon[]>({
+    groupVersionKind: DeploymentGVK,
+    namespace: form.namespace,
+    isList: true,
+  });
+  const nameTaken = workloadNameExists(
+    form.kind,
+    form.name,
+    existingPods ?? [],
+    existingDeployments ?? [],
+  );
+
   const selectedRC: RuntimeClassKind | undefined = sandboxRCs.find(
     (rc) => rc.metadata?.name === form.runtimeClass,
   );
@@ -176,7 +199,7 @@ const CreateSandboxWorkload: FC = () => {
   };
 
   const nameValid = K8S_NAME_RE.test(form.name) && form.name.length <= 63;
-  const generalValid = nameValid && !!form.namespace;
+  const generalValid = nameValid && !!form.namespace && !nameTaken;
   const rcValid = !!form.runtimeClass;
   const containerValid = !!form.image;
 
@@ -220,7 +243,7 @@ const CreateSandboxWorkload: FC = () => {
                 <TextInput
                   id="name"
                   value={form.name}
-                  validated={!form.name || nameValid ? 'default' : 'error'}
+                  validated={!form.name || (nameValid && !nameTaken) ? 'default' : 'error'}
                   onChange={(_e, v) => {
                     set({ name: v });
                   }}
@@ -231,6 +254,18 @@ const CreateSandboxWorkload: FC = () => {
                       <HelperTextItem variant="error">
                         {t(
                           'Must consist of lowercase letters, numbers, and hyphens, start and end with an alphanumeric character, and be at most 63 characters.',
+                        )}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                )}
+                {nameValid && nameTaken && (
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem variant="error">
+                        {t(
+                          'A {{kind}} named "{{name}}" already exists in {{namespace}}. Pick a different name.',
+                          { kind: form.kind, name: form.name, namespace: form.namespace },
                         )}
                       </HelperTextItem>
                     </HelperText>
