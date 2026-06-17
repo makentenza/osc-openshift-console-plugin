@@ -8,7 +8,6 @@ import {
   MACHINE_API_NAMESPACE,
   OSC_NAMESPACE,
   PEER_PODS_CM,
-  PODVM_IMAGE_CM,
 } from './resources';
 import type { ConfigMapKind } from './types';
 
@@ -48,16 +47,6 @@ export const usePeerPodsCm = (): [ConfigMapKind | undefined, boolean] =>
       groupVersionKind: ConfigMapGVK,
       namespace: OSC_NAMESPACE,
       name: PEER_PODS_CM,
-    }),
-  );
-
-/** The pod VM image config map (podvm-image-cm) that points the operator at a pre-built image. */
-export const usePodvmImageCm = (): [ConfigMapKind | undefined, boolean] =>
-  settledCm(
-    useK8sWatchResource<ConfigMapKind>({
-      groupVersionKind: ConfigMapGVK,
-      namespace: OSC_NAMESPACE,
-      name: PODVM_IMAGE_CM,
     }),
   );
 

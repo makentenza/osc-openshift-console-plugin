@@ -119,7 +119,7 @@ const KataConfigWizard: FC = () => {
                       <HelperText>
                         <HelperTextItem>
                           {t(
-                            'Required on clouds without nested virtualization (e.g. most GCP/AWS/Azure). Create the peer-pods-cm and podvm-image-cm before this KataConfig so the operator can launch pod VMs.',
+                            'Required on clouds without nested virtualization (e.g. most GCP/AWS/Azure). Create the peer-pods-cm before this KataConfig — the operator builds and registers the pod VM image itself once it installs.',
                           )}
                         </HelperTextItem>
                       </HelperText>
