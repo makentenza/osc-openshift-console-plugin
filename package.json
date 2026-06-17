@@ -88,8 +88,7 @@
       "RuntimeClassesList": "./components/RuntimeClassesList",
       "OscSetup": "./components/OscSetup",
       "KataConfigWizard": "./components/KataConfigWizard",
-      "PeerPodsConfigWizard": "./components/PeerPodsConfigWizard",
-      "PodVmImageConfigWizard": "./components/PodVmImageConfigWizard"
+      "PeerPodsConfigWizard": "./components/PeerPodsConfigWizard"
     },
     "dependencies": {
       "@console/pluginAPI": "^4.22.0"

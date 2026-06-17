@@ -389,7 +389,7 @@ const PeerPodsConfigWizard: FC = () => {
               <CardBody>
                 <p className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mb">
                   {t(
-                    'The operator reconciles the cloud-api-adaptor DaemonSet from this ConfigMap. On Google Cloud, credentials are minted automatically by the Cloud Credential Operator — no peer-pods-secret is needed unless you removed the CCO. The pod VM image is configured separately, in the podvm-image-cm.',
+                    'The operator reconciles the cloud-api-adaptor DaemonSet from this ConfigMap. On Google Cloud, credentials are minted automatically by the Cloud Credential Operator — no peer-pods-secret is needed unless you removed the CCO. The operator builds and registers the pod VM image automatically when KataConfig installs — no separate image config needed.',
                   )}
                 </p>
                 <CodeBlock>
