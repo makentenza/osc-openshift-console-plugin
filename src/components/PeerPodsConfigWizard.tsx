@@ -60,7 +60,7 @@ const FIELDS: Record<string, Field[]> = {
     {
       key: 'GCP_NETWORK',
       label: 'Network',
-      help: 'Auto-mode VPC network the pod VMs join. The 1.12 docs support only auto-mode networks.',
+      help: 'The VPC network the pod VMs join, as a full resource path — projects/<project>/global/networks/<name>. The cloud-api-adaptor rejects a bare network name. Prefilled from your cluster.',
     },
   ],
   aws: [

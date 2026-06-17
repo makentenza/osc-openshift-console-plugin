@@ -75,7 +75,8 @@ const OpenPeerPodsFirewall: FC = () => {
   // The pod VMs live wherever peer-pods-cm points them (which can differ from the cluster's own
   // VPC); fall back to the cluster networking inferred from the worker MachineSets.
   const project = pp.GCP_PROJECT_ID || gcp.project;
-  const network = basename(pp.GCP_NETWORK) || gcp.network;
+  // gcloud --network wants the short name; both peer-pods-cm and gcp.network may be a full path.
+  const network = basename(pp.GCP_NETWORK || gcp.network);
   const usePublicIp = (pp.USE_PUBLIC_IP ?? '').toLowerCase() === 'true';
 
   // The cloud-api-adaptor reaches each pod VM from the worker node it runs on (hostNetwork), so
