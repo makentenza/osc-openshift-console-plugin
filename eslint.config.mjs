@@ -3,7 +3,8 @@ import tseslint from 'typescript-eslint';
 import react from 'eslint-plugin-react';
 import prettier from 'eslint-plugin-prettier/recommended';
 import reactHooks from 'eslint-plugin-react-hooks';
-import cypress from 'eslint-plugin-cypress';
+import jest from 'eslint-plugin-jest';
+import testingLibrary from 'eslint-plugin-testing-library';
 import globals from 'globals';
 
 export default tseslint.config(
@@ -33,63 +34,34 @@ export default tseslint.config(
         ecmaFeatures: {
           jsx: true,
         },
-      }
+      },
     },
     settings: {
       react: {
         version: 'detect',
       },
-    }
+    },
   },
   {
-    files: ['integration-tests/**/*.{ts,tsx,js}'],
-    ...cypress.configs.recommended,
+    // Jest + Testing Library unit/component tests.
+    files: ['src/**/*.spec.{ts,tsx}'],
+    plugins: {
+      ...jest.configs['flat/recommended'].plugins,
+      ...jest.configs['flat/style'].plugins,
+      ...testingLibrary.configs['flat/react'].plugins,
+    },
     languageOptions: {
+      ...jest.configs['flat/recommended'].languageOptions,
+      ...jest.configs['flat/style'].languageOptions,
       globals: {
-        require: 'readonly',
-        module: 'writable',
+        ...jest.configs['flat/recommended'].languageOptions?.globals,
+        ...globals.node,
       },
     },
     rules: {
-      ...cypress.configs.recommended.rules,
-      'no-console': 'off',
-      '@typescript-eslint/no-namespace': 'off',
-      '@typescript-eslint/no-require-imports': 'off',
-      '@typescript-eslint/no-unused-expressions': 'off',
-    },
-  },
-  {
-    // Cypress component tests (specs, support, SDK mock).
-    files: ['cypress/**/*.{ts,tsx}'],
-    ...cypress.configs.recommended,
-    languageOptions: {
-      ...cypress.configs.recommended.languageOptions,
-      globals: {
-        ...cypress.configs.recommended.languageOptions?.globals,
-        ...globals.browser,
-        require: 'readonly',
-      },
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-      },
-    },
-    rules: {
-      ...cypress.configs.recommended.rules,
-      'no-console': 'off',
-      '@typescript-eslint/no-namespace': 'off',
-      '@typescript-eslint/no-require-imports': 'off',
-      '@typescript-eslint/no-unused-expressions': 'off',
-    },
-  },
-  {
-    // CommonJS webpack config consumed by cypress.config.ts.
-    files: ['cypress/**/*.cjs'],
-    languageOptions: {
-      sourceType: 'commonjs',
-      globals: globals.node,
-    },
-    rules: {
-      '@typescript-eslint/no-require-imports': 'off',
+      ...jest.configs['flat/recommended'].rules,
+      ...jest.configs['flat/style'].rules,
+      ...testingLibrary.configs['flat/react'].rules,
     },
   },
   prettier,

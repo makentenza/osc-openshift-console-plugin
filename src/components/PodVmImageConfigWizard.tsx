@@ -41,7 +41,7 @@ import {
 } from '@patternfly/react-core';
 import type { FC, ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom-v5-compat';
+import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
   BuildConfigModel,

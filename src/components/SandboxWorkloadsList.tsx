@@ -35,7 +35,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ISortBy, OnSort } from '@patternfly/react-table';
 import type { FC } from 'react';
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom-v5-compat';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useSandboxWorkloads } from '../k8s/hooks';
 import { DeploymentModel, NamespaceGVK, PodModel } from '../k8s/resources';

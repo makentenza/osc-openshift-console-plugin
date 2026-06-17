@@ -8,10 +8,11 @@
     "jsx": "react-jsx",
     "allowJs": true,
     "strict": true,
-    "noUnusedLocals": true
+    "noUnusedLocals": true,
+    "types": ["jest", "@testing-library/jest-dom", "node"]
   },
   "include": ["src"],
-  "exclude": ["node_modules"],
+  "exclude": ["node_modules", ".yarn"],
   "ts-node": {
     "files": true,
     "transpileOnly": true,

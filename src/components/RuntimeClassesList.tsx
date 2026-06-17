@@ -8,7 +8,7 @@ import { Card, CardBody, CardTitle, PageSection } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { FC } from 'react';
 import { useMemo } from 'react';
-import { Link } from 'react-router-dom-v5-compat';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useRuntimeClasses, useSandboxWorkloads } from '../k8s/hooks';
 import { ConfigMapGVK, OSC_NAMESPACE, PEER_PODS_CM, RuntimeClassGVK } from '../k8s/resources';

@@ -18,7 +18,7 @@ import {
   PlusCircleIcon,
 } from '@patternfly/react-icons';
 import type { FC, ReactNode } from 'react';
-import { Link } from 'react-router-dom-v5-compat';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useKataConfig } from '../k8s/hooks';
 import { usePeerPodsCm, usePodvmImageCm, useClusterPlatform, useGcpNetworking } from '../k8s/setup';

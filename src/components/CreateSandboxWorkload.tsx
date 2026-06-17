@@ -37,7 +37,7 @@ import {
 } from '@patternfly/react-core';
 import type { FC } from 'react';
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom-v5-compat';
+import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useRuntimeClasses } from '../k8s/hooks';
 import {

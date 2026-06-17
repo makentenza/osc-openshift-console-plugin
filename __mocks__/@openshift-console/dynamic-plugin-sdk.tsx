@@ -1,17 +1,17 @@
 import * as React from 'react';
 
 /*
- * Lightweight stand-in for `@openshift-console/dynamic-plugin-sdk`, used only by
- * Cypress component tests (wired in via a webpack alias in `cypress/webpack-ct.cjs`).
+ * Test stand-in for `@openshift-console/dynamic-plugin-sdk`. The real SDK is
+ * provided by the OpenShift Console host at runtime (redux store, loaded k8s
+ * models, live websockets) — none of which exist under jest/jsdom.
  *
- * The real SDK is provided by the OpenShift Console host at runtime — it depends
- * on a redux store, loaded k8s models, and live websockets, none of which exist
- * when a component is mounted standalone. This mock exposes only the handful of
- * runtime exports the peer-pods / podvm-image wizards actually use, and lets each
- * test drive `useK8sWatchResource` deterministically via `window.__watchResults`.
+ * This mock exposes only the handful of runtime exports our components use, and
+ * lets each test drive `useK8sWatchResource` deterministically via
+ * `window.__watchResults`. Jest applies it automatically for any test importing
+ * the SDK (manual mock adjacent to node_modules).
  */
 
-/** `[data, loaded, loadError]` — mirrors the SDK's `WatchK8sResult` tuple. */
+/** `[data, loaded, loadError]` — mirrors the SDK's WatchK8sResult tuple. */
 export type WatchResult = [unknown, boolean, unknown];
 
 interface WatchResource {

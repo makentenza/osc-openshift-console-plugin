@@ -41,7 +41,7 @@ import {
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { FC } from 'react';
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom-v5-compat';
+import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useDeploymentPods, useRuntimeClasses, usePeerPodIndex } from '../k8s/hooks';
 import { DeploymentGVK, DeploymentModel, PodGVK, PodModel } from '../k8s/resources';

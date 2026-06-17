@@ -30,7 +30,7 @@ import {
 } from '@patternfly/react-core';
 import type { FC } from 'react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom-v5-compat';
+import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ConfigMapModel, OSC_NAMESPACE, PEER_PODS_CM } from '../k8s/resources';
 import type { ConfigMapKind } from '../k8s/types';
