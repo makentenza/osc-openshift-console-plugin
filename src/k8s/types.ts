@@ -101,6 +101,24 @@ export type DaemonSetKind = K8sResourceCommon & {
   };
 };
 
+/** v1 Node — we read status.addresses + labels to compute firewall source ranges. */
+export type NodeKind = K8sResourceCommon & {
+  status?: {
+    addresses?: { type: string; address: string }[];
+  };
+};
+
+/** batch/v1 Job status we surface for the in-cluster firewall apply. */
+export type JobKind = K8sResourceCommon & {
+  spec?: { backoffLimit?: number };
+  status?: {
+    active?: number;
+    succeeded?: number;
+    failed?: number;
+    conditions?: { type: string; status: string; reason?: string; message?: string }[];
+  };
+};
+
 /** v1 Event for watching cluster events. */
 export type EventKind = K8sResourceCommon & {
   involvedObject: {
