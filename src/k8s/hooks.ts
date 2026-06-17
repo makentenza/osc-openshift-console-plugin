@@ -1,8 +1,7 @@
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { useMemo } from 'react';
-import { DeploymentGVK, KataConfigGVK, PeerPodGVK, PodGVK, RuntimeClassGVK } from './resources';
+import { KataConfigGVK, PeerPodGVK, PodGVK, RuntimeClassGVK } from './resources';
 import type {
-  DeploymentKind,
   Isolation,
   KataConfigKind,
   PeerPodKind,
@@ -45,12 +44,11 @@ export const usePeerPodIndex = (): Record<string, PeerPodKind> => {
   }, [data]);
 };
 
-const deploymentReady = (d: DeploymentKind): string =>
-  `${d.status?.readyReplicas ?? 0}/${d.spec?.replicas ?? d.status?.replicas ?? 0}`;
-
 /**
- * The heart of the plugin: watch Pods + Deployments cluster-wide and reduce them to
- * normalized SandboxWorkload rows, keeping only those using a kata RuntimeClass.
+ * The heart of the plugin: watch Pods cluster-wide and reduce them to normalized SandboxWorkload
+ * rows, keeping only those on a kata RuntimeClass. A sandboxed workload is the actual VM guest —
+ * the Pod; Deployments are just controllers and are not listed as workloads (their guest is the
+ * replica Pod, shown here), mirroring the confidential-containers plugin (issue #14).
  */
 export const useSandboxWorkloads = (): {
   workloads: SandboxWorkload[];
@@ -64,10 +62,6 @@ export const useSandboxWorkloads = (): {
     groupVersionKind: PodGVK,
     isList: true,
   });
-  const [deployments, depLoaded] = useK8sWatchResource<DeploymentKind[]>({
-    groupVersionKind: DeploymentGVK,
-    isList: true,
-  });
 
   const isolationMap = useMemo(() => buildIsolationMap(runtimeClasses), [runtimeClasses]);
   const sandboxRCNames = useMemo(
@@ -78,24 +72,6 @@ export const useSandboxWorkloads = (): {
   const workloads = useMemo<SandboxWorkload[]>(() => {
     if (!rcLoaded) return [];
     const rows: SandboxWorkload[] = [];
-
-    (deployments ?? []).forEach((d) => {
-      const rc = d.spec?.template?.spec?.runtimeClassName;
-      if (!rc || !sandboxRCNames.has(rc)) return;
-      rows.push({
-        uid: d.metadata?.uid ?? `${d.metadata?.namespace}/${d.metadata?.name}`,
-        kind: 'Deployment',
-        name: d.metadata?.name ?? '',
-        namespace: d.metadata?.namespace ?? '',
-        runtimeClass: rc,
-        isolation: isolationMap[rc] ?? 'unknown',
-        status:
-          (d.status?.readyReplicas ?? 0) >= (d.spec?.replicas ?? 1) ? 'Available' : 'Progressing',
-        ready: deploymentReady(d),
-        creationTimestamp: d.metadata?.creationTimestamp,
-        obj: d,
-      });
-    });
 
     (pods ?? []).forEach((p) => {
       const rc = p.spec?.runtimeClassName;
@@ -124,9 +100,9 @@ export const useSandboxWorkloads = (): {
     return rows.sort((a, b) =>
       (b.creationTimestamp ?? '').localeCompare(a.creationTimestamp ?? ''),
     );
-  }, [pods, deployments, sandboxRCNames, isolationMap, peerPods, rcLoaded]);
+  }, [pods, sandboxRCNames, isolationMap, peerPods, rcLoaded]);
 
-  return { workloads, loaded: rcLoaded && podsLoaded && depLoaded, isolationMap };
+  return { workloads, loaded: rcLoaded && podsLoaded, isolationMap };
 };
 
 /** Pods belonging to a Deployment, matched via its label selector. */
