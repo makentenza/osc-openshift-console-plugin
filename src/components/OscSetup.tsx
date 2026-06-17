@@ -4,7 +4,6 @@ import {
   Card,
   CardBody,
   CardTitle,
-  ClipboardCopy,
   Flex,
   FlexItem,
   Label,
@@ -21,8 +20,9 @@ import type { FC, ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useKataConfig } from '../k8s/hooks';
-import { usePeerPodsCm, usePodvmImageCm, useClusterPlatform, useGcpNetworking } from '../k8s/setup';
+import { usePeerPodsCm, usePodvmImageCm, useClusterPlatform } from '../k8s/setup';
 import { KataConfigGVK } from '../k8s/resources';
+import OpenPeerPodsFirewall from './OpenPeerPodsFirewall';
 import './sandbox.css';
 
 type Status = 'done' | 'todo' | 'warn' | 'info';
@@ -60,20 +60,12 @@ const OscSetup: FC = () => {
   const [peerPodsCm] = usePeerPodsCm();
   const [podvmImageCm] = usePodvmImageCm();
   const platform = useClusterPlatform();
-  const gcp = useGcpNetworking();
 
   const ppData = peerPodsCm?.data ?? {};
   const ppProvider = ppData.CLOUD_PROVIDER;
   const peerPodsEnabled = Boolean(kataConfig?.spec?.enablePeerPods);
   const podvmImageName = ppData.PODVM_IMAGE_NAME ?? ppData.PODVM_AMI_ID ?? ppData.AZURE_IMAGE_ID;
   const podvmImageReady = Boolean(podvmImageCm) || Boolean(podvmImageName);
-  const isGcp = (ppProvider ?? (platform ? platform.toLowerCase() : 'gcp')) === 'gcp';
-
-  const firewallCmd = `gcloud compute firewall-rules create allow-port-15150-restricted \\
-  --project=${gcp.project ?? '<project_id>'} \\
-  --network=${gcp.network ?? 'default'} \\
-  --allow=tcp:15150 \\
-  --source-ranges=<external_ip_cidr>`;
 
   const steps: Step[] = [
     {
@@ -84,29 +76,7 @@ const OscSetup: FC = () => {
     {
       title: t('Open the peer pods port'),
       status: 'info',
-      detail: (
-        <>
-          <div>
-            {isGcp
-              ? t(
-                  'Open TCP port 15150 so the cluster can reach pod VMs on Compute Engine. This runs in gcloud — it cannot be done from the cluster.',
-                )
-              : t(
-                  'Open the peer pods communication port (TCP 15150) in your cloud firewall. This is done in your cloud CLI, not from the cluster.',
-                )}
-          </div>
-          {isGcp && (
-            <ClipboardCopy
-              isReadOnly
-              variant="expansion"
-              hoverTip={t('Copy')}
-              clickTip={t('Copied')}
-            >
-              {firewallCmd}
-            </ClipboardCopy>
-          )}
-        </>
-      ),
+      detail: <OpenPeerPodsFirewall />,
     },
     {
       title: t('Peer pods config map'),

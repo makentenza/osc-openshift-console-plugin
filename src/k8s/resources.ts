@@ -32,6 +32,9 @@ export const DaemonSetGVK: K8sGroupVersionKind = {
 export const ConfigMapGVK: K8sGroupVersionKind = { version: 'v1', kind: 'ConfigMap' };
 export const EventGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Event' };
 export const NamespaceGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Namespace' };
+export const NodeGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Node' };
+export const JobGVK: K8sGroupVersionKind = { group: 'batch', version: 'v1', kind: 'Job' };
+export const SecretGVK: K8sGroupVersionKind = { version: 'v1', kind: 'Secret' };
 
 /** Minimal K8sModels for create/delete via k8sCreate / k8sDelete. */
 export const PodModel: K8sModel = {
@@ -123,6 +126,52 @@ export const InfrastructureGVK: K8sGroupVersionKind = {
   version: 'v1',
   kind: 'Infrastructure',
 };
+
+export const SecretModel: K8sModel = {
+  apiVersion: 'v1',
+  kind: 'Secret',
+  plural: 'secrets',
+  namespaced: true,
+  abbr: 'S',
+  label: 'Secret',
+  labelPlural: 'Secrets',
+};
+
+/** batch/v1 Job — used to run gcloud in-cluster for the peer pods firewall. */
+export const JobModel: K8sModel = {
+  apiGroup: 'batch',
+  apiVersion: 'v1',
+  kind: 'Job',
+  plural: 'jobs',
+  namespaced: true,
+  abbr: 'J',
+  label: 'Job',
+  labelPlural: 'Jobs',
+};
+
+/** cloudcredential.openshift.io/v1 CredentialsRequest — asks CCO to mint a scoped cloud credential. */
+export const CredentialsRequestModel: K8sModel = {
+  apiGroup: 'cloudcredential.openshift.io',
+  apiVersion: 'v1',
+  kind: 'CredentialsRequest',
+  plural: 'credentialsrequests',
+  namespaced: true,
+  abbr: 'CR',
+  label: 'CredentialsRequest',
+  labelPlural: 'CredentialsRequests',
+  crd: true,
+};
+
+/** Where the Cloud Credential Operator watches CredentialsRequests. */
+export const CLOUD_CREDENTIAL_NAMESPACE = 'openshift-cloud-credential-operator';
+/** The CredentialsRequest / minted Secret / Job the firewall "Apply in cluster" flow creates. */
+export const FIREWALL_CRED_REQUEST = 'osc-peerpods-firewall';
+export const FIREWALL_CRED_SECRET = 'osc-peerpods-firewall-creds';
+export const FIREWALL_JOB = 'osc-open-peerpods-firewall';
+/** The GCP firewall rule name (matches the Red Hat docs / issue #5). */
+export const FIREWALL_RULE_NAME = 'allow-port-15150-restricted';
+/** Container image that provides the gcloud CLI for the in-cluster apply Job. */
+export const CLOUD_SDK_IMAGE = 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim';
 
 export const MachineSetGVK: K8sGroupVersionKind = {
   group: 'machine.openshift.io',
