@@ -1,0 +1,44 @@
+name: Issue
+description: Report a bug or request a new feature for the OpenShift Sandboxed Containers console plugin.
+labels: ["triage"]
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      options:
+        - Bug
+        - Feature request
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: |
+        Describe the bug you encountered or the gap that a new feature would address.
+        For bugs, include steps to reproduce and any error messages.
+      placeholder: What is broken or missing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected outcome
+      description: |
+        Describe the result you expect from a user's perspective.
+        Focus on what the change should bring to you, not on how it should be implemented.
+      placeholder: As a user, what should this bring to you?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, logs, or anything else that helps explain the issue.
+      placeholder: Optional
+    validations:
+      required: false
