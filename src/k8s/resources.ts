@@ -61,7 +61,6 @@ export const DeploymentModel: K8sModel = {
 /** Where OSC operator resources live. */
 export const OSC_NAMESPACE = 'openshift-sandboxed-containers-operator';
 export const PEER_PODS_CM = 'peer-pods-cm';
-export const PODVM_IMAGE_CM = 'podvm-image-cm';
 export const PEER_PODS_SECRET = 'peer-pods-secret';
 export const CAA_DAEMONSET = 'osc-caa-ds';
 export const KATACONFIG_NAME = 'example-kataconfig';

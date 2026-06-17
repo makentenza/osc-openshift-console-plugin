@@ -21,7 +21,7 @@ import type { FC, ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useKataConfig } from '../k8s/hooks';
-import { usePeerPodsCm, usePodvmImageCm, useClusterPlatform } from '../k8s/setup';
+import { usePeerPodsCm, useClusterPlatform } from '../k8s/setup';
 import { KataConfigGVK } from '../k8s/resources';
 import { kataConfigReadiness } from '../utils/status';
 import OpenPeerPodsFirewall from './OpenPeerPodsFirewall';
@@ -60,7 +60,6 @@ const OscSetup: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [kataConfig] = useKataConfig();
   const [peerPodsCm] = usePeerPodsCm();
-  const [podvmImageCm] = usePodvmImageCm();
   const platform = useClusterPlatform();
 
   const ppData = peerPodsCm?.data ?? {};
@@ -68,7 +67,6 @@ const OscSetup: FC = () => {
   const peerPodsEnabled = Boolean(kataConfig?.spec?.enablePeerPods);
   const kata = kataConfigReadiness(kataConfig);
   const podvmImageName = ppData.PODVM_IMAGE_NAME ?? ppData.PODVM_AMI_ID ?? ppData.AZURE_IMAGE_ID;
-  const podvmImageReady = Boolean(podvmImageCm) || Boolean(podvmImageName);
 
   const steps: Step[] = [
     {
@@ -90,21 +88,6 @@ const OscSetup: FC = () => {
       action: {
         label: ppProvider ? t('Edit peer pods config') : t('Configure peer pods'),
         href: '/sandboxes/setup/peer-pods',
-      },
-    },
-    {
-      title: t('Pod VM image'),
-      status: podvmImageReady ? 'done' : ppProvider ? 'warn' : 'todo',
-      detail: podvmImageName ? (
-        <span className="osc-openshift-console-plugin__mono">{podvmImageName}</span>
-      ) : podvmImageCm ? (
-        t('podvm-image-cm is set — the operator will register the image and update peer-pods-cm.')
-      ) : (
-        t('Build a pod VM image, then create podvm-image-cm so peer pods have an image to boot.')
-      ),
-      action: {
-        label: podvmImageCm ? t('Edit pod VM image') : t('Configure pod VM image'),
-        href: '/sandboxes/setup/podvm-image',
       },
     },
     {
@@ -188,6 +171,30 @@ const OscSetup: FC = () => {
         kata.phase === 'absent'
           ? { label: t('Create KataConfig'), href: '/sandboxes/setup/kataconfig' }
           : undefined,
+    },
+    {
+      title: t('Pod VM image'),
+      // The operator builds and registers the pod VM image itself once KataConfig installs — there
+      // is no manual build step. Just surface the image it generated (issue #7).
+      status: podvmImageName ? 'done' : 'info',
+      detail: podvmImageName ? (
+        <>
+          <span className="osc-openshift-console-plugin__mono">{podvmImageName}</span>
+          <div className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt">
+            {t(
+              'Registered automatically by the operator — peer pods boot from this image. No manual build needed.',
+            )}
+          </div>
+        </>
+      ) : kata.ready ? (
+        t(
+          'KataConfig is installed — the operator is registering the pod VM image. It appears here automatically once ready.',
+        )
+      ) : (
+        t(
+          'No action needed — the operator builds and registers the pod VM image automatically when KataConfig finishes installing.',
+        )
+      ),
     },
     {
       title: t('Run a sandboxed workload'),

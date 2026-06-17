@@ -137,14 +137,5 @@
       "component": { "$codeRef": "PeerPodsConfigWizard" }
     },
     "flags": { "required": ["OSC_KATACONFIG"] }
-  },
-  {
-    "type": "console.page/route",
-    "properties": {
-      "exact": true,
-      "path": "/sandboxes/setup/podvm-image",
-      "component": { "$codeRef": "PodVmImageConfigWizard" }
-    },
-    "flags": { "required": ["OSC_KATACONFIG"] }
   }
 ]
