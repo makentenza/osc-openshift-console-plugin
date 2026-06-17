@@ -10,6 +10,7 @@ import {
   PEER_PODS_CM,
 } from './resources';
 import type { ConfigMapKind } from './types';
+import { toGcpNetworkPath } from '../utils/gcp';
 
 export type InfrastructureKind = K8sResourceCommon & {
   status?: {
@@ -84,11 +85,13 @@ export const useGcpNetworking = (): GcpNetworking => {
       .map((m) => m.spec?.template?.spec?.providerSpec?.value)
       .find((v) => v?.networkInterfaces?.length);
     const ni = pv?.networkInterfaces?.[0];
+    const project = gcp?.projectID ?? pv?.projectID;
     return {
-      project: gcp?.projectID ?? pv?.projectID,
+      project,
       zone: pv?.zone ?? (gcp?.region ? `${gcp.region}-a` : undefined),
       machineType: pv?.machineType,
-      network: ni?.network,
+      // GCP_NETWORK must be the fully-qualified resource path; MachineSets carry only the name.
+      network: toGcpNetworkPath(ni?.network, project),
       subnetwork: ni?.subnetwork,
     };
   }, [infra, machineSets]);
