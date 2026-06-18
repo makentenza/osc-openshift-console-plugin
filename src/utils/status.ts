@@ -52,6 +52,8 @@ export interface KataReadiness {
   readyNodes: number;
   totalNodes: number;
   failedNodes: number;
+  /** Uninstall is blocked because pods still use the kata-remote runtime class (§8.1). */
+  blockedByExistingPods: boolean;
 }
 
 /**
@@ -63,15 +65,26 @@ export interface KataReadiness {
  * runtime classes are registered. A node in `failedToInstall` after the rollout settles is a failure.
  */
 export const kataConfigReadiness = (kc?: KataConfigKind): KataReadiness => {
-  if (!kc) return { phase: 'absent', ready: false, readyNodes: 0, totalNodes: 0, failedNodes: 0 };
+  if (!kc)
+    return {
+      phase: 'absent',
+      ready: false,
+      readyNodes: 0,
+      totalNodes: 0,
+      failedNodes: 0,
+      blockedByExistingPods: false,
+    };
   const nodes = kc.status?.kataNodes;
   const totalNodes = nodes?.nodeCount ?? 0;
   const readyNodes = nodes?.readyNodeCount ?? 0;
   const failedNodes = nodes?.failedToInstall?.length ?? 0;
-  const inProgress = kc.status?.conditions?.find((c) => c.type === 'InProgress')?.status;
+  const inProgressCond = kc.status?.conditions?.find((c) => c.type === 'InProgress');
+  const inProgress = inProgressCond?.status;
+  // Deleting a KataConfig while kata-remote pods still run blocks the uninstall (§8.1).
+  const blockedByExistingPods = inProgressCond?.reason === 'BlockedByExistingKataPods';
   const runtimeClasses = kc.status?.runtimeClasses?.length ?? 0;
 
-  const base = { readyNodes, totalNodes, failedNodes };
+  const base = { readyNodes, totalNodes, failedNodes, blockedByExistingPods };
   // Still churning: keep it "installing" even if a node transiently shows up as failed.
   if (inProgress === 'True') return { phase: 'installing', ready: false, ...base };
   if (failedNodes > 0) return { phase: 'failed', ready: false, ...base };

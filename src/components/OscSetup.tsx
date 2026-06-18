@@ -5,6 +5,10 @@ import {
   CardBody,
   CardTitle,
   Checkbox,
+  CodeBlock,
+  CodeBlockCode,
+  Content,
+  ExpandableSection,
   Flex,
   FlexItem,
   Label,
@@ -29,7 +33,7 @@ import {
   useFirewallOpened,
   usePeerPodsCm,
 } from '../k8s/setup';
-import { KataConfigGVK } from '../k8s/resources';
+import { KataConfigGVK, OSC_NAMESPACE, PODVM_IMAGE_JOB } from '../k8s/resources';
 import { kataConfigReadiness } from '../utils/status';
 import OpenPeerPodsFirewall from './OpenPeerPodsFirewall';
 import './sandbox.css';
@@ -95,6 +99,38 @@ const FirewallDoneToggle: FC<{ opened: boolean }> = ({ opened }) => {
   );
 };
 
+// §3.4 troubleshooting: the operator builds the pod VM image in a Job; surface its events and logs
+// for when the image hasn't shown up yet.
+const PODVM_IMAGE_TROUBLESHOOT_CLI = [
+  `oc get events -n ${OSC_NAMESPACE} \\`,
+  `  --field-selector involvedObject.name=${PODVM_IMAGE_JOB}`,
+  `oc logs -n ${OSC_NAMESPACE} jobs/${PODVM_IMAGE_JOB}`,
+].join('\n');
+
+const PodvmImageTroubleshoot: FC = () => {
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
+  const [open, setOpen] = useState(false);
+  return (
+    <ExpandableSection
+      toggleText={t('Taking too long? Troubleshoot the image build')}
+      isExpanded={open}
+      onToggle={(_e, x) => {
+        setOpen(x);
+      }}
+      className="osc-openshift-console-plugin__mt"
+    >
+      <Content component="p" className="osc-openshift-console-plugin__muted">
+        {t(
+          'The operator builds the image in a Job. If it has not appeared after a few minutes, check the Job events and logs:',
+        )}
+      </Content>
+      <CodeBlock>
+        <CodeBlockCode>{PODVM_IMAGE_TROUBLESHOOT_CLI}</CodeBlockCode>
+      </CodeBlock>
+    </ExpandableSection>
+  );
+};
+
 const OscSetup: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [kataConfig] = useKataConfig();
@@ -149,8 +185,9 @@ const OscSetup: FC = () => {
       title: t('KataConfig'),
       // Creating the object only starts a node-by-node rollout — stay "in progress" (not green)
       // until the runtime is actually installed and registered (issue #6).
-      status:
-        kata.phase === 'absent'
+      status: kata.blockedByExistingPods
+        ? 'warn'
+        : kata.phase === 'absent'
           ? 'todo'
           : kata.phase === 'ready'
             ? 'done'
@@ -235,6 +272,15 @@ const OscSetup: FC = () => {
                     )}
               </div>
             )}
+            {kata.blockedByExistingPods && (
+              <div className="osc-openshift-console-plugin__mt">
+                <ExclamationTriangleIcon className="osc-openshift-console-plugin__icon-warning" />{' '}
+                {t(
+                  'Existing pods still use the kata-remote runtime class, which blocks deleting this KataConfig. Delete those workloads first, then retry.',
+                )}{' '}
+                <Link to="/sandboxes/workloads">{t('View sandboxed workloads')}</Link>
+              </div>
+            )}
           </>
         ),
       // Gate the CTA until peer-pods-cm exists so users can't create KataConfig in the wrong order.
@@ -258,9 +304,12 @@ const OscSetup: FC = () => {
           </div>
         </>
       ) : kata.ready ? (
-        t(
-          'KataConfig is installed — the operator is registering the pod VM image. It appears here automatically once ready.',
-        )
+        <>
+          {t(
+            'KataConfig is installed — the operator is registering the pod VM image. It appears here automatically once ready.',
+          )}
+          <PodvmImageTroubleshoot />
+        </>
       ) : (
         t(
           'No action needed — the operator builds and registers the pod VM image automatically when KataConfig finishes installing.',

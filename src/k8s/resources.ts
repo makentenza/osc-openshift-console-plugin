@@ -65,6 +65,8 @@ export const PEER_PODS_SECRET = 'peer-pods-secret';
 export const CAA_DAEMONSET = 'osc-caa-ds';
 export const KATACONFIG_NAME = 'example-kataconfig';
 export const MACHINE_API_NAMESPACE = 'openshift-machine-api';
+/** The operator Job that builds and registers the pod VM image; surfaced for troubleshooting (§3.4). */
+export const PODVM_IMAGE_JOB = 'osc-podvm-image-creation';
 
 /**
  * Small ConfigMap that records manual setup acknowledgements the plugin can't detect from cluster
