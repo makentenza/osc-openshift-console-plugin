@@ -136,6 +136,16 @@ export const InfrastructureGVK: K8sGroupVersionKind = {
   kind: 'Infrastructure',
 };
 
+/**
+ * operator.openshift.io/v1 CloudCredential (cluster singleton). Its credentialsMode tells us whether
+ * the Cloud Credential Operator can mint credentials for the in-cluster firewall "Apply" flow.
+ */
+export const CloudCredentialGVK: K8sGroupVersionKind = {
+  group: 'operator.openshift.io',
+  version: 'v1',
+  kind: 'CloudCredential',
+};
+
 export const SecretModel: K8sModel = {
   apiVersion: 'v1',
   kind: 'Secret',

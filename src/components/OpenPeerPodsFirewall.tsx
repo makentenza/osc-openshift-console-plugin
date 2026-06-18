@@ -41,6 +41,7 @@ import type { JobKind, NodeKind } from '../k8s/types';
 import {
   setFirewallOpened,
   useAwsNetworking,
+  useCcoMode,
   useClusterPlatform,
   useCloudNetworking,
   useFirewallOpened,
@@ -98,6 +99,27 @@ const CommandBlock: FC<{ command: string }> = ({ command }) => {
   );
 };
 
+/**
+ * CCO's CredentialsProvisionFailure message for our firewall CredentialsRequest, if it's failing
+ * (e.g. mint mode, but the project service account can't create the IAM role) — used to fail the
+ * "Apply" flow fast with the real reason instead of waiting out the full ~2-minute timeout.
+ */
+const credsProvisionError = async (): Promise<string | undefined> => {
+  try {
+    const cr = (await k8sGet({
+      model: CredentialsRequestModel,
+      name: FIREWALL_CRED_REQUEST,
+      ns: CLOUD_CREDENTIAL_NAMESPACE,
+    })) as { status?: { conditions?: { type: string; status: string; message?: string }[] } };
+    const cond = cr.status?.conditions?.find(
+      (c) => c.type === 'CredentialsProvisionFailure' && c.status === 'True',
+    );
+    return cond?.message?.split('\n')[0].trim();
+  } catch {
+    return undefined;
+  }
+};
+
 type ApplyPhase = 'idle' | 'minting' | 'applying' | 'running' | 'done' | 'failed';
 
 // How the firewall source ranges were derived, so the UI can explain (or warn about) them.
@@ -120,6 +142,9 @@ const OpenPeerPodsFirewall: FC = () => {
 
   const cloud = useCloudNetworking();
   const awsNet = useAwsNetworking();
+  // Cloud Credential Operator mode: in Manual mode (GCP Workload Identity / STS) CCO can't mint, so
+  // the in-cluster "Apply" flow can't work — disable it up front instead of timing out (§ CCO mode).
+  const ccoManual = useCcoMode() === 'Manual';
   const pp = peerPodsCm?.data ?? {};
   // Normalize the provider from peer-pods-cm first (it's what the cloud-api-adaptor actually uses),
   // then the cluster platform (AWS/Azure/GCP/…), defaulting to GCP for the existing one-click flow.
@@ -307,16 +332,25 @@ const OpenPeerPodsFirewall: FC = () => {
       } catch (e) {
         if (!isAlreadyExists(e)) throw e;
       }
-      // 2. Wait (~2 min) for CCO to mint the secret into the OSC namespace.
+      // 2. Wait (~2 min) for CCO to mint the secret into the OSC namespace — but fail fast if CCO
+      // reports it can't provision the credential (e.g. mint mode, but role creation is denied).
       let minted = false;
       for (let i = 0; i < 40 && !minted; i++) {
         try {
           await k8sGet({ model: SecretModel, name: FIREWALL_CRED_SECRET, ns: OSC_NAMESPACE });
           minted = true;
+          break;
         } catch (e) {
           if (!isNotFound(e)) throw e;
-          await sleep(3000);
         }
+        const provisionError = await credsProvisionError();
+        if (provisionError)
+          throw new Error(
+            t('The Cloud Credential Operator could not mint a credential: {{error}}', {
+              error: provisionError,
+            }),
+          );
+        await sleep(3000);
       }
       if (!minted)
         throw new Error(
@@ -439,7 +473,12 @@ const OpenPeerPodsFirewall: FC = () => {
               onClick={() => void apply()}
               isLoading={busy}
               isDisabled={
-                busy || displayPhase === 'running' || !rangesReady || !project || !network
+                busy ||
+                displayPhase === 'running' ||
+                !rangesReady ||
+                !project ||
+                !network ||
+                ccoManual
               }
             >
               {applyLabel}
@@ -468,14 +507,26 @@ const OpenPeerPodsFirewall: FC = () => {
             </FlexItem>
           )}
         </Flex>
-        <Content
-          component="small"
-          className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt"
-        >
-          {t(
-            'Apply in cluster asks the Cloud Credential Operator to mint a credential scoped to compute.firewalls.*, then runs gcloud in a Job — no local CLI or cloud console needed.',
-          )}
-        </Content>
+        {ccoManual ? (
+          <Alert
+            variant="info"
+            isInline
+            isPlain
+            className="osc-openshift-console-plugin__mt"
+            title={t(
+              'This cluster uses manually-managed credentials (the Cloud Credential Operator is in Manual mode), so it can’t mint a credential. Run the command above with your own credentials instead.',
+            )}
+          />
+        ) : (
+          <Content
+            component="small"
+            className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt"
+          >
+            {t(
+              'Apply in cluster asks the Cloud Credential Operator to mint a credential scoped to compute.firewalls.*, then runs gcloud in a Job — no local CLI or cloud console needed.',
+            )}
+          </Content>
+        )}
 
         {error && (
           <Alert
