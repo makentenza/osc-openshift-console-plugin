@@ -1,3 +1,12 @@
+import { load } from 'js-yaml';
+
+/**
+ * Parse a YAML document (the manifest a user edited in the create wizard) back into a plain object
+ * so it can be created. Uses the full js-yaml parser — unlike the minimal emitter below, the input
+ * is arbitrary user-authored YAML. Throws on invalid YAML.
+ */
+export const fromYaml = (text: string): unknown => load(text);
+
 /**
  * Minimal YAML emitter for manifest previews. Handles the plain-JSON shapes we
  * build in the create wizard; not a general-purpose YAML library.
