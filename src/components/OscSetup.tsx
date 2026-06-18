@@ -4,6 +4,7 @@ import {
   Card,
   CardBody,
   CardTitle,
+  Checkbox,
   Flex,
   FlexItem,
   Label,
@@ -18,10 +19,16 @@ import {
   PlusCircleIcon,
 } from '@patternfly/react-icons';
 import type { FC, ReactNode } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useKataConfig } from '../k8s/hooks';
-import { usePeerPodsCm, useClusterPlatform } from '../k8s/setup';
+import {
+  setFirewallOpened,
+  useClusterPlatform,
+  useFirewallOpened,
+  usePeerPodsCm,
+} from '../k8s/setup';
 import { KataConfigGVK } from '../k8s/resources';
 import { kataConfigReadiness } from '../utils/status';
 import OpenPeerPodsFirewall from './OpenPeerPodsFirewall';
@@ -56,11 +63,44 @@ const StatusIcon: FC<{ status: Status }> = ({ status }) => {
   return <PlusCircleIcon className="osc-openshift-console-plugin__muted" />;
 };
 
+/**
+ * Opening the peer pods firewall ports is manual — the plugin can't see a cloud firewall rule
+ * (especially on AWS/Azure) — so let the user mark the step done. That turns the check green and
+ * keeps the checklist consistent with every other step (issue #13). Persisted in-cluster via the
+ * setup ConfigMap, so it's shared across admins and survives reloads.
+ */
+const FirewallDoneToggle: FC<{ opened: boolean }> = ({ opened }) => {
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
+  const [busy, setBusy] = useState(false);
+  const toggle = async (checked: boolean) => {
+    setBusy(true);
+    try {
+      await setFirewallOpened(checked);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Checkbox
+      id="osc-firewall-done"
+      className="osc-openshift-console-plugin__mt"
+      isChecked={opened}
+      isDisabled={busy}
+      onChange={(_e, checked) => void toggle(checked)}
+      label={t('Mark this step as done')}
+      description={t(
+        'Tick this once you have opened the firewall ports in your cloud — it turns the step green. The GCP "Apply in cluster" action ticks it for you.',
+      )}
+    />
+  );
+};
+
 const OscSetup: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [kataConfig] = useKataConfig();
   const [peerPodsCm] = usePeerPodsCm();
   const platform = useClusterPlatform();
+  const [firewallOpened] = useFirewallOpened();
 
   const ppData = peerPodsCm?.data ?? {};
   const ppProvider = ppData.CLOUD_PROVIDER;
@@ -86,8 +126,13 @@ const OscSetup: FC = () => {
     },
     {
       title: t('Open the peer pods port'),
-      status: 'info',
-      detail: <OpenPeerPodsFirewall />,
+      status: firewallOpened ? 'done' : 'info',
+      detail: (
+        <>
+          <OpenPeerPodsFirewall />
+          <FirewallDoneToggle opened={firewallOpened} />
+        </>
+      ),
     },
     {
       title: t('Peer pods config map'),

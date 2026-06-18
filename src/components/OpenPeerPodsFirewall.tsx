@@ -17,7 +17,7 @@ import {
   Spinner,
 } from '@patternfly/react-core';
 import type { FC } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   CLOUD_CREDENTIAL_NAMESPACE,
@@ -35,8 +35,10 @@ import {
 } from '../k8s/resources';
 import type { JobKind, NodeKind } from '../k8s/types';
 import {
+  setFirewallOpened,
   useClusterPlatform,
   useCloudNetworking,
+  useFirewallOpened,
   useGcpNetworking,
   usePeerPodsCm,
 } from '../k8s/setup';
@@ -152,6 +154,14 @@ const OpenPeerPodsFirewall: FC = () => {
   // setState-in-effect): once the Job we started finishes, the displayed phase reflects its result.
   const displayPhase: ApplyPhase =
     phase === 'running' ? (jobSucceeded ? 'done' : jobFailed ? 'failed' : 'running') : phase;
+
+  // When the in-cluster GCP apply Job succeeds, persist the firewall-opened acknowledgement so the
+  // setup step turns (and stays) green — the Job is short-lived (TTL), so we record it rather than
+  // infer it from a transient resource (issue #13).
+  const [firewallOpened] = useFirewallOpened();
+  useEffect(() => {
+    if (displayPhase === 'done' && !firewallOpened) void setFirewallOpened(true);
+  }, [displayPhase, firewallOpened]);
 
   const credentialsRequest: K8sResourceCommon & { spec: Record<string, unknown> } = {
     apiVersion: 'cloudcredential.openshift.io/v1',
