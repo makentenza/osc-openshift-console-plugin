@@ -1,5 +1,7 @@
 # OpenShift Sandboxed Containers console plugin (`osc-openshift-console-plugin`)
 
+[![Build and push image](https://github.com/makentenza/osc-openshift-console-plugin/actions/workflows/build-push.yml/badge.svg)](https://github.com/makentenza/osc-openshift-console-plugin/actions/workflows/build-push.yml)
+
 > [!WARNING]
 > **Unofficial and unsupported.** This is a community/personal project — **not** an official Red Hat
 > or OpenShift product, and **not** covered by Red Hat support, subscriptions, or any SLA. It is
