@@ -1,7 +1,9 @@
 import {
   DocumentTitle,
   k8sCreate,
+  k8sPatch,
   ListPageHeader,
+  useK8sWatchResource,
   type K8sResourceCommon,
 } from '@openshift-console/dynamic-plugin-sdk';
 import {
@@ -11,6 +13,7 @@ import {
   Card,
   CardBody,
   CardTitle,
+  Checkbox,
   CodeBlock,
   CodeBlockCode,
   ExpandableSection,
@@ -24,6 +27,7 @@ import {
   HelperText,
   HelperTextItem,
   PageSection,
+  Radio,
   Switch,
   TextInput,
 } from '@patternfly/react-core';
@@ -31,9 +35,12 @@ import type { FC } from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { KataConfigModel } from '../k8s/resources';
+import { KATA_NODE_LABEL, KataConfigModel, NodeGVK, NodeModel } from '../k8s/resources';
+import type { NodeKind } from '../k8s/types';
 import { toYaml } from '../utils/yaml';
 import './sandbox.css';
+
+const WORKER_LABEL = 'node-role.kubernetes.io/worker';
 
 const KataConfigWizard: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
@@ -43,14 +50,31 @@ const KataConfigWizard: FC = () => {
   const [enablePeerPods, setEnablePeerPods] = useState(true);
   const [checkNodeEligibility, setCheckNodeEligibility] = useState(false);
   const [logLevel, setLogLevel] = useState('info');
+  const [nodeMode, setNodeMode] = useState<'all' | 'specific'>('all');
+  const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
   const [poolLabelKey, setPoolLabelKey] = useState('');
   const [poolLabelValue, setPoolLabelValue] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
+  const [nodes] = useK8sWatchResource<NodeKind[]>({ groupVersionKind: NodeGVK, isList: true });
+  const workerNodes = (nodes ?? []).filter((n) =>
+    Object.keys(n.metadata?.labels ?? {}).includes(WORKER_LABEL),
+  );
+  // A hand-picked node set is targeted by labeling those nodes and selecting on that label.
+  const useSpecificNodes = nodeMode === 'specific' && selectedNodes.length > 0;
+
+  const toggleNode = (node: string, checked: boolean) => {
+    setSelectedNodes((prev) =>
+      checked ? Array.from(new Set([...prev, node])) : prev.filter((n) => n !== node),
+    );
+  };
+
   const spec: Record<string, unknown> = { enablePeerPods, checkNodeEligibility, logLevel };
-  if (poolLabelKey.trim()) {
+  if (useSpecificNodes) {
+    spec.kataConfigPoolSelector = { matchLabels: { [KATA_NODE_LABEL]: 'true' } };
+  } else if (poolLabelKey.trim()) {
     spec.kataConfigPoolSelector = {
       matchLabels: { [poolLabelKey.trim()]: poolLabelValue.trim() },
     };
@@ -67,6 +91,18 @@ const KataConfigWizard: FC = () => {
     setBusy(true);
     setError(undefined);
     try {
+      // Label the hand-picked nodes so KataConfig's pool selector matches exactly them.
+      if (useSpecificNodes) {
+        await Promise.all(
+          selectedNodes.map((node) =>
+            k8sPatch({
+              model: NodeModel,
+              resource: { apiVersion: 'v1', kind: 'Node', metadata: { name: node } },
+              data: [{ op: 'add', path: `/metadata/labels/${KATA_NODE_LABEL}`, value: 'true' }],
+            }),
+          ),
+        );
+      }
       await k8sCreate({ model: KataConfigModel, data: manifest });
       void navigate('/sandboxes');
     } catch (e) {
@@ -119,12 +155,70 @@ const KataConfigWizard: FC = () => {
                       <HelperText>
                         <HelperTextItem>
                           {t(
-                            'Required on clouds without nested virtualization (e.g. most GCP/AWS/Azure). Create the peer-pods-cm before this KataConfig — the operator builds and registers the pod VM image itself once it installs.',
+                            'Required on clouds without nested virtualization (e.g. most GCP/AWS/Azure). Create the peer-pods-cm before this KataConfig. It installs both runtime classes — kata-remote (peer pods) and kata (on-node) — so one cluster can run either, chosen per workload by its runtimeClassName.',
                           )}
                         </HelperTextItem>
                       </HelperText>
                     </FormHelperText>
                   </FormGroup>
+
+                  <FormGroup label={t('Install on')} isInline fieldId="kc-node-mode">
+                    <Radio
+                      id="kc-nodes-all"
+                      name="kc-node-mode"
+                      label={t('All worker nodes')}
+                      isChecked={nodeMode === 'all'}
+                      onChange={() => {
+                        setNodeMode('all');
+                      }}
+                    />
+                    <Radio
+                      id="kc-nodes-specific"
+                      name="kc-node-mode"
+                      label={t('Specific nodes')}
+                      isChecked={nodeMode === 'specific'}
+                      onChange={() => {
+                        setNodeMode('specific');
+                      }}
+                    />
+                  </FormGroup>
+                  {nodeMode === 'specific' && (
+                    <FormGroup fieldId="kc-node-list">
+                      {workerNodes.length === 0 ? (
+                        <HelperText>
+                          <HelperTextItem>{t('No worker nodes found.')}</HelperTextItem>
+                        </HelperText>
+                      ) : (
+                        <div className="osc-openshift-console-plugin__node-list">
+                          {workerNodes.map((n) => {
+                            const nodeName = n.metadata?.name ?? '';
+                            return (
+                              <Checkbox
+                                key={nodeName}
+                                id={`kc-node-${nodeName}`}
+                                label={nodeName}
+                                isChecked={selectedNodes.includes(nodeName)}
+                                onChange={(_e, c) => {
+                                  toggleNode(nodeName, c);
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>
+                            {t(
+                              'The runtime installs only on the nodes you pick — each is labeled {{label}}=true and reboots once. Other workers are untouched.',
+                              { label: KATA_NODE_LABEL },
+                            )}
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                  )}
+
                   <FormGroup label={t('Check node eligibility')} fieldId="kc-eligibility">
                     <Switch
                       id="kc-eligibility"
@@ -136,6 +230,15 @@ const KataConfigWizard: FC = () => {
                         'Only install on nodes labeled feature.node.kubernetes.io/runtime.kata=true',
                       )}
                     />
+                    <FormHelperText>
+                      <HelperText>
+                        <HelperTextItem>
+                          {t(
+                            'Requires Node Feature Discovery (NFD): it labels virt-capable nodes with that label, and the runtime installs only there. Leave this off if NFD is not installed — or pick Specific nodes above instead.',
+                          )}
+                        </HelperTextItem>
+                      </HelperText>
+                    </FormHelperText>
                   </FormGroup>
                   <FormGroup label={t('Log level')} fieldId="kc-loglevel">
                     <FormSelect
@@ -170,7 +273,7 @@ const KataConfigWizard: FC = () => {
                         <HelperText>
                           <HelperTextItem>
                             {t(
-                              'Optional kataConfigPoolSelector. Leave empty to install kata-remote on all worker nodes.',
+                              'Optional kataConfigPoolSelector. Leave empty to install on all worker nodes. Ignored when you pick Specific nodes above.',
                             )}
                           </HelperTextItem>
                         </HelperText>
@@ -198,7 +301,11 @@ const KataConfigWizard: FC = () => {
                       variant="primary"
                       onClick={() => void create()}
                       isLoading={busy}
-                      isDisabled={busy || name.trim() === ''}
+                      isDisabled={
+                        busy ||
+                        name.trim() === '' ||
+                        (nodeMode === 'specific' && selectedNodes.length === 0)
+                      }
                     >
                       {t('Create')}
                     </Button>
