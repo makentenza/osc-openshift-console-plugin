@@ -69,6 +69,9 @@ import { IsolationLabel } from './IsolationLabel';
 import './sandbox.css';
 
 const MACHINE_TYPE_ANNOTATION = 'io.katacontainers.config.hypervisor.machine_type';
+// Peer pods can instead let the operator auto-pick an instance type from a vCPU/memory floor (§3.8).
+const DEFAULT_VCPUS_ANNOTATION = 'io.katacontainers.config.hypervisor.default_vcpus';
+const DEFAULT_MEMORY_ANNOTATION = 'io.katacontainers.config.hypervisor.default_memory';
 
 /** RFC 1123 label: what the API server will accept as a resource name. */
 const K8S_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -83,7 +86,11 @@ interface WorkloadForm {
   cpu: string;
   memory: string;
   replicas: number;
+  // Peer-pod instance selection: cluster default, a specific PODVM_INSTANCE_TYPE(S), or auto by size.
+  instanceMode: 'default' | 'specific' | 'auto';
   machineType: string;
+  defaultVcpus: string;
+  defaultMemory: string;
   env: string;
   pullPolicy: string;
   port: string;
@@ -137,9 +144,19 @@ const buildManifest = (
   };
   // app={name} is forced last so a user-supplied "app" label can't break the Deployment selector.
   const labels = { ...parseKeyValueLines(f.labels), app: f.name };
+  // Peer-pod instance type → either a specific machine_type, or a default_vcpus/default_memory floor
+  // the operator sizes an instance from; on-node pods and the "default" mode add nothing (§3.8).
+  const peerPodAnnotations: Record<string, string> = {};
+  if (isPeerPod && f.instanceMode === 'specific' && f.machineType.trim())
+    peerPodAnnotations[MACHINE_TYPE_ANNOTATION] = f.machineType.trim();
+  if (isPeerPod && f.instanceMode === 'auto') {
+    if (f.defaultVcpus.trim()) peerPodAnnotations[DEFAULT_VCPUS_ANNOTATION] = f.defaultVcpus.trim();
+    if (f.defaultMemory.trim())
+      peerPodAnnotations[DEFAULT_MEMORY_ANNOTATION] = f.defaultMemory.trim();
+  }
   const annotations = {
     ...parseKeyValueLines(f.annotations),
-    ...(isPeerPod && f.machineType ? { [MACHINE_TYPE_ANNOTATION]: f.machineType } : {}),
+    ...peerPodAnnotations,
   };
   const hasAnnotations = Object.keys(annotations).length > 0;
 
@@ -201,6 +218,16 @@ const CreateSandboxWorkload: FC = () => {
   const sandboxRCs = useMemo(() => runtimeClasses.filter(isSandboxRuntimeClass), [runtimeClasses]);
   const defaultMachineType =
     peerPodsCm?.data?.GCP_MACHINE_TYPE ?? peerPodsCm?.data?.PODVM_INSTANCE_TYPE;
+  // Instance types a peer-pod workload may request (peer-pods-cm PODVM_INSTANCE_TYPES), offered as a
+  // dropdown so the machine_type annotation stays within the allowed set (§3.8). The default type is
+  // always offered too, even if it isn't listed.
+  const allowedInstanceTypes = (peerPodsCm?.data?.PODVM_INSTANCE_TYPES ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const instanceTypeOptions = Array.from(
+    new Set([...(defaultMachineType ? [defaultMachineType] : []), ...allowedInstanceTypes]),
+  );
 
   const [form, setForm] = useState<WorkloadForm>(() => ({
     kind: 'Pod',
@@ -212,7 +239,10 @@ const CreateSandboxWorkload: FC = () => {
     cpu: '',
     memory: '',
     replicas: 1,
+    instanceMode: 'default',
     machineType: '',
+    defaultVcpus: '',
+    defaultMemory: '',
     env: '',
     pullPolicy: '',
     port: '',
@@ -439,6 +469,17 @@ const CreateSandboxWorkload: FC = () => {
                     </HelperText>
                   </FormHelperText>
                 )}
+                {form.namespace === OSC_NAMESPACE && (
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem variant="warning">
+                        {t(
+                          'Avoid deploying workloads in the Operator namespace. Create or pick a dedicated namespace instead.',
+                        )}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                )}
               </FormGroup>
               {form.kind === 'Deployment' && (
                 <FormGroup label={t('Replicas')} fieldId="replicas">
@@ -555,27 +596,110 @@ const CreateSandboxWorkload: FC = () => {
                 />
               </FormGroup>
               {isPeerPod && (
-                <FormGroup label={t('Peer-pod machine type (optional)')} fieldId="mt">
-                  <TextInput
-                    id="mt"
-                    value={form.machineType}
-                    onChange={(_e, v) => {
-                      set({ machineType: v });
+                <FormGroup label={t('Peer-pod instance type')} isInline fieldId="instanceMode">
+                  <Radio
+                    id="it-default"
+                    name="instanceMode"
+                    label={
+                      defaultMachineType
+                        ? t('Cluster default ({{mt}})', { mt: defaultMachineType })
+                        : t('Cluster default')
+                    }
+                    isChecked={form.instanceMode === 'default'}
+                    onChange={() => {
+                      set({ instanceMode: 'default' });
                     }}
-                    placeholder={defaultMachineType ?? 'e2-standard-4'}
                   />
-                  {defaultMachineType && (
+                  <Radio
+                    id="it-specific"
+                    name="instanceMode"
+                    label={t('Specific type')}
+                    isChecked={form.instanceMode === 'specific'}
+                    onChange={() => {
+                      set({ instanceMode: 'specific' });
+                    }}
+                  />
+                  <Radio
+                    id="it-auto"
+                    name="instanceMode"
+                    label={t('Automatic (by vCPU and memory)')}
+                    isChecked={form.instanceMode === 'auto'}
+                    onChange={() => {
+                      set({ instanceMode: 'auto' });
+                    }}
+                  />
+                </FormGroup>
+              )}
+              {isPeerPod && form.instanceMode === 'specific' && (
+                <FormGroup label={t('Instance type')} fieldId="mt">
+                  {instanceTypeOptions.length > 0 ? (
+                    <FormSelect
+                      id="mt"
+                      value={form.machineType}
+                      onChange={(_e, v) => {
+                        set({ machineType: v });
+                      }}
+                    >
+                      <FormSelectOption value="" label={t('Select an instance type')} />
+                      {instanceTypeOptions.map((it) => (
+                        <FormSelectOption key={it} value={it} label={it} />
+                      ))}
+                    </FormSelect>
+                  ) : (
+                    <TextInput
+                      id="mt"
+                      value={form.machineType}
+                      onChange={(_e, v) => {
+                        set({ machineType: v });
+                      }}
+                      placeholder={defaultMachineType ?? 't3.large'}
+                    />
+                  )}
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>
+                        {t(
+                          'Must be one of the instance types allowed in peer-pods-cm (PODVM_INSTANCE_TYPES).',
+                        )}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+              )}
+              {isPeerPod && form.instanceMode === 'auto' && (
+                <>
+                  <FormGroup label={t('vCPUs')} fieldId="vcpus">
+                    <TextInput
+                      id="vcpus"
+                      type="number"
+                      value={form.defaultVcpus}
+                      onChange={(_e, v) => {
+                        set({ defaultVcpus: v });
+                      }}
+                      placeholder="2"
+                    />
+                  </FormGroup>
+                  <FormGroup label={t('Memory (MiB)')} fieldId="mem">
+                    <TextInput
+                      id="mem"
+                      type="number"
+                      value={form.defaultMemory}
+                      onChange={(_e, v) => {
+                        set({ defaultMemory: v });
+                      }}
+                      placeholder="2048"
+                    />
                     <FormHelperText>
                       <HelperText>
                         <HelperTextItem>
-                          {t('Leave empty to use the cluster default: {{mt}}', {
-                            mt: defaultMachineType,
-                          })}
+                          {t(
+                            'The operator picks the smallest instance type that meets this vCPU and memory floor.',
+                          )}
                         </HelperTextItem>
                       </HelperText>
                     </FormHelperText>
-                  )}
-                </FormGroup>
+                  </FormGroup>
+                </>
               )}
               <ExpandableSection
                 toggleText={t('Advanced options (optional)')}
@@ -856,12 +980,21 @@ const CreateSandboxWorkload: FC = () => {
                       )}
                       {isPeerPod && (
                         <DescriptionListGroup>
-                          <DescriptionListTerm>{t('Machine type')}</DescriptionListTerm>
+                          <DescriptionListTerm>{t('Instance type')}</DescriptionListTerm>
                           <DescriptionListDescription>
-                            {form.machineType ||
-                              (defaultMachineType
-                                ? t('Cluster default ({{mt}})', { mt: defaultMachineType })
-                                : t('Cluster default'))}
+                            {form.instanceMode === 'specific'
+                              ? form.machineType ||
+                                (defaultMachineType
+                                  ? t('Cluster default ({{mt}})', { mt: defaultMachineType })
+                                  : t('Cluster default'))
+                              : form.instanceMode === 'auto'
+                                ? t('Automatic ({{vcpus}} vCPU, {{mem}} MiB)', {
+                                    vcpus: form.defaultVcpus || '—',
+                                    mem: form.defaultMemory || '—',
+                                  })
+                                : defaultMachineType
+                                  ? t('Cluster default ({{mt}})', { mt: defaultMachineType })
+                                  : t('Cluster default')}
                           </DescriptionListDescription>
                         </DescriptionListGroup>
                       )}
