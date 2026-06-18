@@ -1,13 +1,21 @@
 import { useMemo } from 'react';
-import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
+import {
+  k8sCreate,
+  k8sGet,
+  k8sUpdate,
+  useK8sWatchResource,
+} from '@openshift-console/dynamic-plugin-sdk';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 import {
   ConfigMapGVK,
+  ConfigMapModel,
+  FIREWALL_OPENED_KEY,
   InfrastructureGVK,
   MachineSetGVK,
   MACHINE_API_NAMESPACE,
   OSC_NAMESPACE,
   PEER_PODS_CM,
+  SETUP_CM,
 } from './resources';
 import type { ConfigMapKind } from './types';
 import { toGcpNetworkPath } from '../utils/gcp';
@@ -54,6 +62,55 @@ export const usePeerPodsCm = (): [ConfigMapKind | undefined, boolean] =>
       name: PEER_PODS_CM,
     }),
   );
+
+/**
+ * Whether the user has marked the (manual) "open the peer pods firewall ports" step done — the
+ * plugin can't detect a cloud firewall rule itself (especially AWS/Azure), so the acknowledgement
+ * is recorded in the setup ConfigMap and reflected as a green check (issue #13). Returns
+ * `[opened, loaded]`.
+ */
+export const useFirewallOpened = (): [boolean, boolean] => {
+  const [cm, loaded] = settledCm(
+    useK8sWatchResource<ConfigMapKind>({
+      groupVersionKind: ConfigMapGVK,
+      namespace: OSC_NAMESPACE,
+      name: SETUP_CM,
+    }),
+  );
+  return [cm?.data?.[FIREWALL_OPENED_KEY] === 'true', loaded];
+};
+
+const isNotFound = (e: unknown): boolean => {
+  const code = typeof e === 'object' && e !== null ? (e as { code?: number }).code : undefined;
+  return code === 404 || /not found/i.test(e instanceof Error ? e.message : String(e));
+};
+
+/** Record (or clear) the firewall-opened acknowledgement in the setup ConfigMap, creating it if absent. */
+export const setFirewallOpened = async (opened: boolean): Promise<void> => {
+  const value = opened ? 'true' : 'false';
+  try {
+    const cm = await k8sGet<ConfigMapKind>({
+      model: ConfigMapModel,
+      name: SETUP_CM,
+      ns: OSC_NAMESPACE,
+    });
+    await k8sUpdate({
+      model: ConfigMapModel,
+      data: { ...cm, data: { ...cm.data, [FIREWALL_OPENED_KEY]: value } },
+    });
+  } catch (e) {
+    if (!isNotFound(e)) throw e;
+    await k8sCreate({
+      model: ConfigMapModel,
+      data: {
+        apiVersion: 'v1',
+        kind: 'ConfigMap',
+        metadata: { name: SETUP_CM, namespace: OSC_NAMESPACE },
+        data: { [FIREWALL_OPENED_KEY]: value },
+      },
+    });
+  }
+};
 
 export const useClusterPlatform = (): string | undefined => {
   const [infra] = useK8sWatchResource<InfrastructureKind>({

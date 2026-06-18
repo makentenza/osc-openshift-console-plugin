@@ -66,6 +66,14 @@ export const CAA_DAEMONSET = 'osc-caa-ds';
 export const KATACONFIG_NAME = 'example-kataconfig';
 export const MACHINE_API_NAMESPACE = 'openshift-machine-api';
 
+/**
+ * Small ConfigMap that records manual setup acknowledgements the plugin can't detect from cluster
+ * state — e.g. that the user opened the peer-pods firewall ports in their cloud (issue #13). Stored
+ * in-cluster so the green check is shared across admins and survives reloads.
+ */
+export const SETUP_CM = 'osc-console-plugin-setup';
+export const FIREWALL_OPENED_KEY = 'firewallOpened';
+
 export const ConfigMapModel: K8sModel = {
   apiVersion: 'v1',
   kind: 'ConfigMap',
