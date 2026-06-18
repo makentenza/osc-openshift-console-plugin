@@ -115,7 +115,7 @@ const ADVANCED_FIELDS: Record<string, Field[]> = {
     {
       key: 'GCP_SUBNETWORK',
       label: 'Subnetwork (custom VPC only)',
-      help: 'Leave empty for auto-mode networks. Set this only for a custom VPC — you must also open the peer-pods firewall ports on its subnet.',
+      help: 'Prefilled from your cluster’s worker subnet on a custom VPC. Leave empty only on auto-mode (default) networks. On a custom VPC you must also open the peer-pods firewall ports on this subnet.',
     },
     TAGS_FIELD,
   ],
@@ -434,10 +434,17 @@ const PeerPodsConfigWizard: FC = () => {
                         onChange={(_e, c) => {
                           set('USE_PUBLIC_IP', c ? 'true' : 'false');
                         }}
-                        label={t(
-                          'Reach pod VMs over their public IP (only if they are on a different VPC)',
-                        )}
+                        label={t('Reach pod VMs over their public IP')}
                       />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>
+                            {t(
+                              'Independent of the fields above. Turn on only when pod VMs run in a separate VPC or network with no private route from your workers — the cloud-api-adaptor then reaches them over their public IP. Leave off for same-VPC peer pods.',
+                            )}
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
                     </FormGroup>
                   </ExpandableSection>
 
