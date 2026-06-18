@@ -11,6 +11,8 @@ import {
   CardBody,
   CardTitle,
   Checkbox,
+  CodeBlock,
+  CodeBlockCode,
   DescriptionList,
   DescriptionListDescription,
   DescriptionListGroup,
@@ -20,6 +22,7 @@ import {
   ExpandableSection,
   Form,
   FormGroup,
+  FormGroupLabelHelp,
   FormHelperText,
   FormSelect,
   FormSelectOption,
@@ -30,6 +33,7 @@ import {
   MenuToggle,
   NumberInput,
   PageSection,
+  Popover,
   Radio,
   Select,
   SelectList,
@@ -72,6 +76,8 @@ const MACHINE_TYPE_ANNOTATION = 'io.katacontainers.config.hypervisor.machine_typ
 // Peer pods can instead let the operator auto-pick an instance type from a vCPU/memory floor (§3.8).
 const DEFAULT_VCPUS_ANNOTATION = 'io.katacontainers.config.hypervisor.default_vcpus';
 const DEFAULT_MEMORY_ANNOTATION = 'io.katacontainers.config.hypervisor.default_memory';
+// A custom pod VM image for this workload, overriding the operator's default registered image (§3.7).
+const IMAGE_ANNOTATION = 'io.katacontainers.config.hypervisor.image';
 
 /** RFC 1123 label: what the API server will accept as a resource name. */
 const K8S_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -91,6 +97,7 @@ interface WorkloadForm {
   machineType: string;
   defaultVcpus: string;
   defaultMemory: string;
+  podVmImage: string;
   env: string;
   pullPolicy: string;
   port: string;
@@ -154,6 +161,7 @@ const buildManifest = (
     if (f.defaultMemory.trim())
       peerPodAnnotations[DEFAULT_MEMORY_ANNOTATION] = f.defaultMemory.trim();
   }
+  if (isPeerPod && f.podVmImage.trim()) peerPodAnnotations[IMAGE_ANNOTATION] = f.podVmImage.trim();
   const annotations = {
     ...parseKeyValueLines(f.annotations),
     ...peerPodAnnotations,
@@ -243,6 +251,7 @@ const CreateSandboxWorkload: FC = () => {
     machineType: '',
     defaultVcpus: '',
     defaultMemory: '',
+    podVmImage: '',
     env: '',
     pullPolicy: '',
     port: '',
@@ -344,6 +353,15 @@ const CreateSandboxWorkload: FC = () => {
   const generalValid = nameValid && !!form.namespace && !nameTaken && nsUsable;
   const rcValid = !!form.runtimeClass;
   const containerValid = !!form.image;
+
+  // The peer pods pull-secret procedure (§3.6), shown in the Image pull secret field's popover so a
+  // private workload image actually pulls inside the pod VM.
+  const pullSecretCli = [
+    `oc get secret pull-secret -n openshift-config -o yaml \\`,
+    `  | sed 's/namespace: openshift-config/namespace: ${form.namespace}/' \\`,
+    `  | oc apply -n ${form.namespace} -f -`,
+    `oc secrets link default pull-secret --for=pull -n ${form.namespace}`,
+  ].join('\n');
 
   return (
     <>
@@ -701,6 +719,27 @@ const CreateSandboxWorkload: FC = () => {
                   </FormGroup>
                 </>
               )}
+              {isPeerPod && (
+                <FormGroup label={t('Pod VM image (optional)')} fieldId="podVmImage">
+                  <TextInput
+                    id="podVmImage"
+                    value={form.podVmImage}
+                    onChange={(_e, v) => {
+                      set({ podVmImage: v });
+                    }}
+                    placeholder={t('Use the operator default')}
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>
+                        {t(
+                          'Override the default pod VM image with a custom image ID (AMI or Azure image) compatible with your cloud. Leave blank to use the image the operator registered.',
+                        )}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+              )}
               <ExpandableSection
                 toggleText={t('Advanced options (optional)')}
                 isExpanded={advancedOpen}
@@ -831,7 +870,29 @@ const CreateSandboxWorkload: FC = () => {
                     </HelperText>
                   </FormHelperText>
                 </FormGroup>
-                <FormGroup label={t('Image pull secret')} fieldId="pullSecret">
+                <FormGroup
+                  label={t('Image pull secret')}
+                  fieldId="pullSecret"
+                  labelHelp={
+                    <Popover
+                      headerContent={t('Create a pull secret for peer pods')}
+                      bodyContent={
+                        <>
+                          <p className="osc-openshift-console-plugin__mb">
+                            {t(
+                              'Peer pods pull the image inside the pod VM, so the secret must exist in this namespace. Copy the cluster pull secret in (and optionally link it to the default service account):',
+                            )}
+                          </p>
+                          <CodeBlock>
+                            <CodeBlockCode>{pullSecretCli}</CodeBlockCode>
+                          </CodeBlock>
+                        </>
+                      }
+                    >
+                      <FormGroupLabelHelp aria-label={t('More info for image pull secret')} />
+                    </Popover>
+                  }
+                >
                   <TextInput
                     id="pullSecret"
                     value={form.imagePullSecret}
