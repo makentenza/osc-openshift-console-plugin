@@ -7,8 +7,9 @@
  * cluster (region, the cloud-api-adaptor's own networking from peer-pods-cm, the Azure resource
  * group) and leaving the rest as clearly-marked <PLACEHOLDERS> the user fills before running.
  *
- * Both ports the cloud-api-adaptor needs are opened: TCP 15150 (kata agent) and UDP 9000 (VXLAN
- * tunnel), matching the GCP rule.
+ * Both ports the cloud-api-adaptor needs are opened: 15150 (kata agent) and 9000 (VXLAN tunnel).
+ * AWS opens both as TCP, matching the Red Hat "Enabling ports" procedure; Azure opens both in one
+ * rule with protocol '*'. The command is rendered comment-free so it pastes and runs as-is (#27).
  */
 
 /** Cloud providers that get a resolved copy-paste CLI (GCP has its own in-cluster apply flow). */
@@ -20,8 +21,6 @@ export interface FirewallParams {
   region?: string;
   /** AWS security group id (sg-…) the pod VMs use — from peer-pods-cm AWS_SG_IDS if present. */
   awsSecurityGroupId?: string;
-  /** AWS VPC id (vpc-…) — from peer-pods-cm VPC_ID if present (used only in a comment hint). */
-  awsVpcId?: string;
   /** Azure resource group that owns the network security group. */
   azureResourceGroup?: string;
   /** Azure network security group name — from peer-pods-cm AZURE_NSG_ID if present. */
@@ -46,23 +45,20 @@ export interface FirewallCommand {
 const dedupe = (tokens: string[]): string[] => Array.from(new Set(tokens.filter(Boolean)));
 
 /**
- * AWS: two `aws ec2 authorize-security-group-ingress` calls (TCP 15150, UDP 9000) against the pod
+ * AWS: two `aws ec2 authorize-security-group-ingress` calls (TCP 15150, TCP 9000) against the pod
  * VM security group. The source is the same security group (worker↔pod-VM traffic stays inside it),
- * which is the cloud-api-adaptor default.
+ * which is the cloud-api-adaptor default. Both ports use TCP, per the Red Hat "Enabling ports" docs.
  */
 const awsCommand = (p: FirewallParams): FirewallCommand => {
   const region = p.region || PH.region;
   const sg = p.awsSecurityGroupId || PH.awsSg;
-  const vpcHint = p.awsVpcId ? ` (VPC ${p.awsVpcId})` : '';
   const command = [
-    `# Open the peer pods ports on the pod VM security group${vpcHint}.`,
-    `# Source is the security group itself, so workers and pod VMs can talk over both ports.`,
     `aws ec2 authorize-security-group-ingress \\`,
     `  --region ${region} \\`,
     `  --group-id ${sg} \\`,
     `  --ip-permissions \\`,
     `    'IpProtocol=tcp,FromPort=15150,ToPort=15150,UserIdGroupPairs=[{GroupId=${sg}}]' \\`,
-    `    'IpProtocol=udp,FromPort=9000,ToPort=9000,UserIdGroupPairs=[{GroupId=${sg}}]'`,
+    `    'IpProtocol=tcp,FromPort=9000,ToPort=9000,UserIdGroupPairs=[{GroupId=${sg}}]'`,
   ].join('\n');
   const placeholders = dedupe([p.region ? '' : PH.region, p.awsSecurityGroupId ? '' : PH.awsSg]);
   return { command, placeholders };
@@ -76,7 +72,6 @@ const azureCommand = (p: FirewallParams): FirewallCommand => {
   const rg = p.azureResourceGroup || PH.azureRg;
   const nsg = p.azureNsgName || PH.azureNsg;
   const command = [
-    `# Open the peer pods ports on the cluster network security group.`,
     `az network nsg rule create \\`,
     `  --resource-group ${rg} \\`,
     `  --nsg-name ${nsg} \\`,
