@@ -55,16 +55,11 @@ import {
 } from '../k8s/resources';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 import type { ConfigMapKind, NamespaceKind, RuntimeClassKind } from '../k8s/types';
-import {
-  isSandboxRuntimeClass,
-  isolationForHandler,
-  platformLikelySupportsNestedVirt,
-  runtimeClassCatalog,
-} from '../utils/runtime';
-import { useClusterPlatform } from '../k8s/setup';
+import { isSandboxRuntimeClass, isolationForHandler, runtimeClassCatalog } from '../utils/runtime';
 import {
   namespacePhase,
   parseEnvLines,
+  parseKeyValueLines,
   suggestWorkloadName,
   workloadNameExists,
 } from '../utils/workload';
@@ -92,6 +87,10 @@ interface WorkloadForm {
   pullPolicy: string;
   port: string;
   serviceAccount: string;
+  labels: string;
+  nodeSelector: string;
+  imagePullSecret: string;
+  restartPolicy: string;
 }
 
 const buildManifest = (
@@ -116,11 +115,18 @@ const buildManifest = (
   const port = Number(f.port);
   if (f.port.trim() && Number.isInteger(port) && port > 0 && port <= 65535)
     container.ports = [{ containerPort: port }];
+  const nodeSelector = parseKeyValueLines(f.nodeSelector);
   const podSpec: Record<string, unknown> = {
     runtimeClassName: f.runtimeClass,
     containers: [container],
     ...(f.serviceAccount.trim() ? { serviceAccountName: f.serviceAccount.trim() } : {}),
+    ...(Object.keys(nodeSelector).length ? { nodeSelector } : {}),
+    ...(f.imagePullSecret.trim() ? { imagePullSecrets: [{ name: f.imagePullSecret.trim() }] } : {}),
+    // A Deployment's pod template must use restartPolicy Always; only set it for a bare Pod.
+    ...(f.kind === 'Pod' && f.restartPolicy ? { restartPolicy: f.restartPolicy } : {}),
   };
+  // app={name} is forced last so a user-supplied "app" label can't break the Deployment selector.
+  const labels = { ...parseKeyValueLines(f.labels), app: f.name };
   const annotations =
     isPeerPod && f.machineType ? { [MACHINE_TYPE_ANNOTATION]: f.machineType } : undefined;
 
@@ -131,7 +137,7 @@ const buildManifest = (
       metadata: {
         name: f.name,
         namespace: f.namespace,
-        labels: { app: f.name },
+        labels,
         ...(annotations ? { annotations } : {}),
       },
       spec: podSpec,
@@ -140,12 +146,12 @@ const buildManifest = (
   return {
     apiVersion: 'apps/v1',
     kind: 'Deployment',
-    metadata: { name: f.name, namespace: f.namespace, labels: { app: f.name } },
+    metadata: { name: f.name, namespace: f.namespace, labels },
     spec: {
       replicas: f.replicas,
       selector: { matchLabels: { app: f.name } },
       template: {
-        metadata: { labels: { app: f.name }, ...(annotations ? { annotations } : {}) },
+        metadata: { labels, ...(annotations ? { annotations } : {}) },
         spec: podSpec,
       },
     },
@@ -165,13 +171,9 @@ const CreateSandboxWorkload: FC = () => {
     namespace: OSC_NAMESPACE,
     name: PEER_PODS_CM,
   });
-  const platform = useClusterPlatform();
   const sandboxRCs = useMemo(() => runtimeClasses.filter(isSandboxRuntimeClass), [runtimeClasses]);
   const defaultMachineType =
     peerPodsCm?.data?.GCP_MACHINE_TYPE ?? peerPodsCm?.data?.PODVM_INSTANCE_TYPE;
-  // On-node kata needs the worker to expose hardware virt (KVM); managed clouds usually don't, so
-  // warn (best-effort, never block) when the platform likely lacks it (issue: on-node caveat).
-  const nestedVirtUnlikely = platformLikelySupportsNestedVirt(platform) === false;
 
   const [form, setForm] = useState<WorkloadForm>(() => ({
     kind: 'Pod',
@@ -188,6 +190,10 @@ const CreateSandboxWorkload: FC = () => {
     pullPolicy: '',
     port: '',
     serviceAccount: '',
+    labels: '',
+    nodeSelector: '',
+    imagePullSecret: '',
+    restartPolicy: '',
   }));
   const [nsOpen, setNsOpen] = useState(false);
   const [error, setError] = useState<string>();
@@ -450,13 +456,12 @@ const CreateSandboxWorkload: FC = () => {
                         </CardTitle>
                         <CardBody>
                           {cat?.blurb ?? t('Sandbox runtime class.')}
-                          {iso === 'node' && nestedVirtUnlikely && (
+                          {iso === 'node' && (
                             <div className="osc-openshift-console-plugin__mt">
                               <HelperText>
-                                <HelperTextItem variant="warning">
+                                <HelperTextItem variant="indeterminate">
                                   {t(
-                                    'On-node kata needs nested virtualization. This {{platform}} cluster likely lacks it on standard nodes — the pod may stay unschedulable. Use a peer-pod runtime class instead, or a node with nested virt enabled.',
-                                    { platform },
+                                    'On-node Kata boots the microVM directly on the worker node, so those nodes must have nested virtualization (KVM) enabled. Make sure your worker nodes support it. If you are not sure — or they do not — a peer-pods runtime class runs each pod in its own cloud VM and does not need nested virtualization.',
                                   )}
                                 </HelperTextItem>
                               </HelperText>
@@ -591,14 +596,87 @@ const CreateSandboxWorkload: FC = () => {
                     }}
                     placeholder="default"
                   />
+                </FormGroup>
+                <FormGroup label={t('Labels')} fieldId="labels">
+                  <TextArea
+                    id="labels"
+                    value={form.labels}
+                    onChange={(_e, v) => {
+                      set({ labels: v });
+                    }}
+                    placeholder={'tier=frontend\nteam=payments'}
+                    rows={2}
+                    resizeOrientation="vertical"
+                  />
                   <FormHelperText>
                     <HelperText>
                       <HelperTextItem>
-                        {t('Need anything else? Edit the manifest directly on the Review step.')}
+                        {t('One KEY=value per line, added alongside app={{name}}.', {
+                          name: form.name,
+                        })}
                       </HelperTextItem>
                     </HelperText>
                   </FormHelperText>
                 </FormGroup>
+                <FormGroup label={t('Node selector')} fieldId="nodeSelector">
+                  <TextArea
+                    id="nodeSelector"
+                    value={form.nodeSelector}
+                    onChange={(_e, v) => {
+                      set({ nodeSelector: v });
+                    }}
+                    placeholder={'disktype=ssd\nkubernetes.io/arch=amd64'}
+                    rows={2}
+                    resizeOrientation="vertical"
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>
+                        {t('One KEY=value per line. The pod schedules only onto matching nodes.')}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+                <FormGroup label={t('Image pull secret')} fieldId="pullSecret">
+                  <TextInput
+                    id="pullSecret"
+                    value={form.imagePullSecret}
+                    onChange={(_e, v) => {
+                      set({ imagePullSecret: v });
+                    }}
+                    placeholder="my-registry-secret"
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>
+                        {t('Name of a pull secret in this namespace, for private registry images.')}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+                {form.kind === 'Pod' && (
+                  <FormGroup label={t('Restart policy')} fieldId="restartPolicy">
+                    <FormSelect
+                      id="restartPolicy"
+                      value={form.restartPolicy}
+                      onChange={(_e, v) => {
+                        set({ restartPolicy: v });
+                      }}
+                    >
+                      <FormSelectOption value="" label={t('Cluster default (Always)')} />
+                      <FormSelectOption value="Always" label="Always" />
+                      <FormSelectOption value="OnFailure" label="OnFailure" />
+                      <FormSelectOption value="Never" label="Never" />
+                    </FormSelect>
+                  </FormGroup>
+                )}
+                <FormHelperText>
+                  <HelperText>
+                    <HelperTextItem>
+                      {t('Need anything else? Edit the manifest directly on the Review step.')}
+                    </HelperTextItem>
+                  </HelperText>
+                </FormHelperText>
               </ExpandableSection>
             </Form>
           </WizardStep>

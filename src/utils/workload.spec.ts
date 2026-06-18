@@ -1,4 +1,10 @@
-import { namespacePhase, parseEnvLines, suggestWorkloadName, workloadNameExists } from './workload';
+import {
+  namespacePhase,
+  parseEnvLines,
+  parseKeyValueLines,
+  suggestWorkloadName,
+  workloadNameExists,
+} from './workload';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 
 const named = (...names: string[]): K8sResourceCommon[] =>
@@ -98,5 +104,26 @@ describe('parseEnvLines', () => {
 
   it('returns an empty array for empty input', () => {
     expect(parseEnvLines('')).toEqual([]);
+  });
+});
+
+describe('parseKeyValueLines', () => {
+  it('parses KEY=value lines into a string map', () => {
+    expect(parseKeyValueLines('tier=frontend\nteam=payments')).toEqual({
+      tier: 'frontend',
+      team: 'payments',
+    });
+  });
+
+  it('lets a later duplicate key win', () => {
+    expect(parseKeyValueLines('app=a\napp=b')).toEqual({ app: 'b' });
+  });
+
+  it('skips blank and malformed lines, and keeps = in values', () => {
+    expect(parseKeyValueLines('k=v=1\n\njunk\n=novalue')).toEqual({ k: 'v=1' });
+  });
+
+  it('returns an empty object for empty input', () => {
+    expect(parseKeyValueLines('')).toEqual({});
   });
 });
