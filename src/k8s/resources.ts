@@ -64,6 +64,8 @@ export const PEER_PODS_CM = 'peer-pods-cm';
 export const PEER_PODS_SECRET = 'peer-pods-secret';
 export const CAA_DAEMONSET = 'osc-caa-ds';
 export const KATACONFIG_NAME = 'example-kataconfig';
+/** Label the KataConfig node picker applies to hand-selected nodes; the pool selector matches it. */
+export const KATA_NODE_LABEL = 'osc-kata-node';
 export const MACHINE_API_NAMESPACE = 'openshift-machine-api';
 /** The operator Job that builds and registers the pod VM image; surfaced for troubleshooting (§3.4). */
 export const PODVM_IMAGE_JOB = 'osc-podvm-image-creation';
@@ -154,6 +156,17 @@ export const SecretModel: K8sModel = {
   abbr: 'S',
   label: 'Secret',
   labelPlural: 'Secrets',
+};
+
+/** v1 Node — cluster-scoped; used to label hand-picked nodes for the KataConfig pool selector. */
+export const NodeModel: K8sModel = {
+  apiVersion: 'v1',
+  kind: 'Node',
+  plural: 'nodes',
+  namespaced: false,
+  abbr: 'N',
+  label: 'Node',
+  labelPlural: 'Nodes',
 };
 
 /** batch/v1 Job — used to run gcloud in-cluster for the peer pods firewall. */

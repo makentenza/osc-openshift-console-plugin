@@ -53,6 +53,15 @@
   overflow-y: auto;
 }
 
+.osc-openshift-console-plugin__node-list {
+  max-block-size: 14rem;
+  overflow-y: auto;
+  padding: var(--pf-t--global--spacer--sm, 0.5rem);
+  border: var(--pf-t--global--border--width--regular, 1px) solid
+    var(--pf-t--global--border--color--default);
+  border-radius: var(--pf-t--global--border--radius--small, 3px);
+}
+
 .osc-openshift-console-plugin__spark {
   display: block;
   margin-block-start: var(--pf-t--global--spacer--sm, 0.5rem);
