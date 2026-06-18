@@ -243,7 +243,7 @@ const CreateSandboxWorkload: FC = () => {
     namespace: 'default',
     runtimeClass: '',
     image: 'registry.access.redhat.com/ubi9/ubi:latest',
-    command: 'sleep 36000',
+    command: '',
     cpu: '',
     memory: '',
     replicas: 1,
@@ -590,7 +590,7 @@ const CreateSandboxWorkload: FC = () => {
                   onChange={(_e, v) => {
                     set({ command: v });
                   }}
-                  placeholder="sleep 36000"
+                  placeholder="e.g. sleep 36000"
                 />
               </FormGroup>
               <FormGroup label={t('CPU request/limit')} fieldId="cpu">
@@ -600,7 +600,7 @@ const CreateSandboxWorkload: FC = () => {
                   onChange={(_e, v) => {
                     set({ cpu: v });
                   }}
-                  placeholder="500m"
+                  placeholder="e.g. 500m"
                 />
               </FormGroup>
               <FormGroup label={t('Memory request/limit')} fieldId="memory">
@@ -610,7 +610,7 @@ const CreateSandboxWorkload: FC = () => {
                   onChange={(_e, v) => {
                     set({ memory: v });
                   }}
-                  placeholder="256Mi"
+                  placeholder="e.g. 256Mi"
                 />
               </FormGroup>
               {isPeerPod && (
