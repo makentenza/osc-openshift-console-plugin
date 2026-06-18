@@ -10,6 +10,10 @@ import {
   Alert,
   Button,
   ClipboardCopy,
+  ClipboardCopyButton,
+  CodeBlock,
+  CodeBlockAction,
+  CodeBlockCode,
   Content,
   Flex,
   FlexItem,
@@ -36,6 +40,7 @@ import {
 import type { JobKind, NodeKind } from '../k8s/types';
 import {
   setFirewallOpened,
+  useAwsNetworking,
   useClusterPlatform,
   useCloudNetworking,
   useFirewallOpened,
@@ -56,6 +61,42 @@ const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(
 const isAlreadyExists = (e: unknown): boolean =>
   errCode(e) === 409 || /already exists/i.test(errMsg(e));
 const isNotFound = (e: unknown): boolean => errCode(e) === 404 || /not found/i.test(errMsg(e));
+
+/**
+ * A read-only multi-line shell command in a CodeBlock with a copy button. Unlike ClipboardCopy's
+ * expansion variant (which flattens the newlines into a single line on copy), this preserves the
+ * command exactly as shown so it pastes and runs as-is (#27).
+ */
+const CommandBlock: FC<{ command: string }> = ({ command }) => {
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
+  const [copied, setCopied] = useState(false);
+  const copy = (): void => {
+    void navigator.clipboard?.writeText(command);
+    setCopied(true);
+  };
+  return (
+    <CodeBlock
+      actions={
+        <CodeBlockAction>
+          <ClipboardCopyButton
+            id="osc-fw-copy-btn"
+            aria-label={t('Copy to clipboard')}
+            onClick={copy}
+            exitDelay={copied ? 1500 : 600}
+            variant="plain"
+            onTooltipHidden={() => {
+              setCopied(false);
+            }}
+          >
+            {copied ? t('Copied') : t('Copy')}
+          </ClipboardCopyButton>
+        </CodeBlockAction>
+      }
+    >
+      <CodeBlockCode id="osc-fw-cmd">{command}</CodeBlockCode>
+    </CodeBlock>
+  );
+};
 
 type ApplyPhase = 'idle' | 'minting' | 'applying' | 'running' | 'done' | 'failed';
 
@@ -78,6 +119,7 @@ const OpenPeerPodsFirewall: FC = () => {
   const [nodes] = useK8sWatchResource<NodeKind[]>({ groupVersionKind: NodeGVK, isList: true });
 
   const cloud = useCloudNetworking();
+  const awsNet = useAwsNetworking();
   const pp = peerPodsCm?.data ?? {};
   // Normalize the provider from peer-pods-cm first (it's what the cloud-api-adaptor actually uses),
   // then the cluster platform (AWS/Azure/GCP/…), defaulting to GCP for the existing one-click flow.
@@ -298,11 +340,12 @@ const OpenPeerPodsFirewall: FC = () => {
   if (provider === 'aws' || provider === 'azure') {
     const fwProvider: FirewallProvider = provider;
     // AWS_SG_IDS may be a comma-separated list; the rule targets the pod VM SG, so use the first.
-    const awsSg = pp.AWS_SG_IDS?.split(',')[0]?.trim() || undefined;
+    // Before peer-pods-cm exists, fall back to the worker MachineSet's security group when literal.
+    const awsSg = pp.AWS_SG_IDS?.split(',')[0]?.trim() || awsNet.securityGroupId;
     const { command: cliCommand, placeholders } = buildFirewallCommand(fwProvider, {
-      region: provider === 'aws' ? (pp.AWS_REGION ?? cloud.region) : pp.AZURE_REGION,
+      region:
+        provider === 'aws' ? (pp.AWS_REGION ?? cloud.region ?? awsNet.region) : pp.AZURE_REGION,
       awsSecurityGroupId: awsSg,
-      awsVpcId: pp.AWS_VPC_ID,
       azureResourceGroup: pp.AZURE_RESOURCE_GROUP ?? cloud.azureResourceGroup,
       azureNsgName: pp.AZURE_NSG_ID,
     });
@@ -310,18 +353,10 @@ const OpenPeerPodsFirewall: FC = () => {
       <>
         <Content component="p" className="osc-openshift-console-plugin__muted">
           {t(
-            'Open the peer pods communication ports — TCP 15150 (agent) and UDP 9000 (VXLAN tunnel) — so your worker nodes can reach the pod VMs. The command below is filled in from your cluster; run it in your cloud CLI.',
+            'Open the peer pods communication ports (15150 and 9000) so your worker nodes can reach the pod VMs. The command below is filled in from your cluster — run it in your cloud CLI.',
           )}
         </Content>
-        <ClipboardCopy
-          isReadOnly
-          variant="expansion"
-          isExpanded
-          hoverTip={t('Copy')}
-          clickTip={t('Copied')}
-        >
-          {cliCommand}
-        </ClipboardCopy>
+        <CommandBlock command={cliCommand} />
         {placeholders.length > 0 && (
           <Alert
             variant="warning"
