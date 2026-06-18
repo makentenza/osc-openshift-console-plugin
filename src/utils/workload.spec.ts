@@ -1,4 +1,4 @@
-import { namespacePhase, suggestWorkloadName, workloadNameExists } from './workload';
+import { namespacePhase, parseEnvLines, suggestWorkloadName, workloadNameExists } from './workload';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 
 const named = (...names: string[]): K8sResourceCommon[] =>
@@ -71,5 +71,32 @@ describe('suggestWorkloadName', () => {
     const a = suggestWorkloadName();
     const b = suggestWorkloadName();
     expect(a).not.toBe(b);
+  });
+});
+
+describe('parseEnvLines', () => {
+  it('parses KEY=value lines into env entries', () => {
+    expect(parseEnvLines('FOO=bar\nBAZ=qux')).toEqual([
+      { name: 'FOO', value: 'bar' },
+      { name: 'BAZ', value: 'qux' },
+    ]);
+  });
+
+  it('keeps everything after the first = (values may contain =)', () => {
+    expect(parseEnvLines('URL=https://x?a=b')).toEqual([{ name: 'URL', value: 'https://x?a=b' }]);
+  });
+
+  it('skips blank lines, lines without =, and empty keys', () => {
+    expect(parseEnvLines('FOO=bar\n\nnotavar\n=novalue\n  ')).toEqual([
+      { name: 'FOO', value: 'bar' },
+    ]);
+  });
+
+  it('trims surrounding whitespace on key and value', () => {
+    expect(parseEnvLines('  FOO = bar  ')).toEqual([{ name: 'FOO', value: 'bar' }]);
+  });
+
+  it('returns an empty array for empty input', () => {
+    expect(parseEnvLines('')).toEqual([]);
   });
 });
