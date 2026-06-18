@@ -7,6 +7,7 @@ import {
 } from '@openshift-console/dynamic-plugin-sdk';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 import {
+  CloudCredentialGVK,
   ConfigMapGVK,
   ConfigMapModel,
   FIREWALL_OPENED_KEY,
@@ -132,6 +133,24 @@ export const useClusterPlatform = (): string | undefined => {
     name: 'cluster',
   });
   return infra?.status?.platform;
+};
+
+export type CloudCredentialKind = K8sResourceCommon & {
+  spec?: { credentialsMode?: string };
+};
+
+/**
+ * The Cloud Credential Operator's configured mode (CloudCredential/cluster .spec.credentialsMode).
+ * 'Manual' (GCP Workload Identity / STS) means CCO cannot mint credentials at all, so the in-cluster
+ * "Apply" firewall flow can't work and the UI disables it. Empty (default), 'Mint', or 'Passthrough'
+ * are attempted — with a fast-fail if CCO then reports a provisioning error. undefined until loaded.
+ */
+export const useCcoMode = (): string | undefined => {
+  const [cc] = useK8sWatchResource<CloudCredentialKind>({
+    groupVersionKind: CloudCredentialGVK,
+    name: 'cluster',
+  });
+  return cc?.spec?.credentialsMode;
 };
 
 /** Cloud-provider facts the AWS/Azure firewall CLI needs, read best-effort from the cluster. */
