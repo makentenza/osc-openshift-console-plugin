@@ -38,8 +38,22 @@ type GcpProviderSpec = {
   networkInterfaces?: { network?: string; subnetwork?: string }[];
 };
 
+// AWSMachineProviderConfig (machine.openshift.io/v1beta1). OpenShift IPI clusters usually reference
+// the subnet and security groups by tag *filters* rather than literal ids, so id is optional and we
+// only prefill what's literally present — region and instanceType are always literal.
+interface AwsFilterRef {
+  id?: string;
+  filters?: { name?: string; values?: string[] }[];
+}
+interface AwsProviderSpec {
+  instanceType?: string;
+  placement?: { region?: string; availabilityZone?: string };
+  subnet?: AwsFilterRef;
+  securityGroups?: AwsFilterRef[];
+}
+
 export type MachineSetKind = K8sResourceCommon & {
-  spec?: { template?: { spec?: { providerSpec?: { value?: GcpProviderSpec } } } };
+  spec?: { template?: { spec?: { providerSpec?: { value?: GcpProviderSpec & AwsProviderSpec } } } };
 };
 
 // A named-resource watch for an object that does not exist yet returns a 404
@@ -183,6 +197,53 @@ export const useGcpNetworking = (): GcpNetworking => {
       // GCP_NETWORK must be the fully-qualified resource path; MachineSets carry only the name.
       network: toGcpNetworkPath(ni?.network, project),
       subnetwork: ni?.subnetwork,
+    };
+  }, [infra, machineSets]);
+};
+
+export interface AwsNetworking {
+  region?: string;
+  instanceType?: string;
+  /** Only set when the worker MachineSet references the subnet by literal id (not a tag filter). */
+  subnetId?: string;
+  /** First literal security-group id, when present. */
+  securityGroupId?: string;
+  /** Comma-joined literal security-group ids, when present (peer-pods-cm AWS_SG_IDS format). */
+  securityGroupIds?: string;
+}
+
+/**
+ * Best-effort prefill of AWS values from the cluster's Infrastructure + worker MachineSets, so the
+ * peer-pods config map starts filled in like GCP (issue #28). Region and instance type are always
+ * literal; subnet and security groups are only prefilled when the MachineSet carries literal ids
+ * (IPI clusters often use tag filters instead — those stay blank for the user to supply, and the
+ * wizard surfaces the AWS CLI to fetch them).
+ */
+export const useAwsNetworking = (): AwsNetworking => {
+  const [infra] = useK8sWatchResource<InfrastructureKind>({
+    groupVersionKind: InfrastructureGVK,
+    name: 'cluster',
+  });
+  const [machineSets] = useK8sWatchResource<MachineSetKind[]>({
+    groupVersionKind: MachineSetGVK,
+    namespace: MACHINE_API_NAMESPACE,
+    isList: true,
+  });
+
+  return useMemo(() => {
+    const region = infra?.status?.platformStatus?.aws?.region;
+    const pv = (machineSets ?? [])
+      .map((m) => m.spec?.template?.spec?.providerSpec?.value)
+      .find((v) => v?.instanceType || v?.subnet || v?.securityGroups?.length);
+    const sgIds = (pv?.securityGroups ?? [])
+      .map((g) => g?.id)
+      .filter((id): id is string => Boolean(id));
+    return {
+      region: region ?? pv?.placement?.region,
+      instanceType: pv?.instanceType,
+      subnetId: pv?.subnet?.id,
+      securityGroupId: sgIds[0],
+      securityGroupIds: sgIds.length ? sgIds.join(',') : undefined,
     };
   }, [infra, machineSets]);
 };
