@@ -74,7 +74,11 @@ const config: Configuration = {
     }),
     new ForkTsCheckerWebpackPlugin({
       typescript: {
-        configFile: path.resolve(__dirname, 'tsconfig.json'),
+        // Build-only tsconfig that excludes *.spec.ts(x): the production bundle should not
+        // type-check test files. eslint (projectService) and jest still cover the specs via
+        // tsconfig.json. Mirrors release-4.21's ts-loader configFile so the two branches stay
+        // in sync on what the production build type-checks.
+        configFile: path.resolve(__dirname, 'tsconfig.build.json'),
       },
     }),
   ],
