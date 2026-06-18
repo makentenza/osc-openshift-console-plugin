@@ -47,7 +47,7 @@ const StatusIcon: FC<{ status: Status }> = ({ status }) => {
   if (status === 'done')
     return (
       <CheckCircleIcon
-        className="osc-openshift-console-plugin__icon-info"
+        className="osc-openshift-console-plugin__icon-success"
         color="var(--pf-t--global--icon--color--status--success--default)"
       />
     );

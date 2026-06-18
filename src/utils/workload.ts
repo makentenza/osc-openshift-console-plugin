@@ -57,3 +57,11 @@ export const parseEnvLines = (text: string): { name: string; value: string }[] =
       return { name: line.slice(0, i).trim(), value: line.slice(i + 1).trim() };
     })
     .filter((e) => e.name !== '');
+
+/**
+ * Parse "KEY=value" lines into a string map for the advanced workload fields that take a flat object
+ * — labels and nodeSelector (issue #9 advanced options). Later duplicate keys win. Reuses the env
+ * line parser, so blank/`=`-less lines and empty keys are skipped the same way.
+ */
+export const parseKeyValueLines = (text: string): Record<string, string> =>
+  Object.fromEntries(parseEnvLines(text).map((e) => [e.name, e.value]));
