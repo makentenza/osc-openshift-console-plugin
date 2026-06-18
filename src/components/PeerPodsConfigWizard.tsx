@@ -328,7 +328,7 @@ const PeerPodsConfigWizard: FC = () => {
                       <HelperText>
                         <HelperTextItem>
                           {t(
-                            'Keep this on for sandboxed containers. Confidential Containers sets DISABLECVM to false to boot pod VMs inside a TEE.',
+                            'Cluster-wide setting. Leave on for OpenShift sandboxed containers — peer pods run as regular (non-confidential) cloud VMs. Confidential Containers turn it off to boot pod VMs inside a TEE; on clouds that path is Azure-only (not AWS/GCP), runs only as peer pods (never nested), and needs the Red Hat build of Trustee attestation — set it up via the Confidential Containers operator, not here.',
                           )}
                         </HelperTextItem>
                       </HelperText>

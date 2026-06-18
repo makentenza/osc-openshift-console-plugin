@@ -38,6 +38,7 @@
   "Cluster default (Always)": "Cluster default (Always)",
   "Cluster default (RollingUpdate)": "Cluster default (RollingUpdate)",
   "Cluster default ({{mt}})": "Cluster default ({{mt}})",
+  "Cluster-wide setting. Leave on for OpenShift sandboxed containers — peer pods run as regular (non-confidential) cloud VMs. Confidential Containers turn it off to boot pod VMs inside a TEE; on clouds that path is Azure-only (not AWS/GCP), runs only as peer pods (never nested), and needs the Red Hat build of Trustee attestation — set it up via the Confidential Containers operator, not here.": "Cluster-wide setting. Leave on for OpenShift sandboxed containers — peer pods run as regular (non-confidential) cloud VMs. Confidential Containers turn it off to boot pod VMs inside a TEE; on clouds that path is Azure-only (not AWS/GCP), runs only as peer pods (never nested), and needs the Red Hat build of Trustee attestation — set it up via the Confidential Containers operator, not here.",
   "Comma-separated security group IDs (sg-…).": "Comma-separated security group IDs (sg-…).",
   "Comma-separated, no spaces. Instance types a workload may request by annotation; leave empty to allow only the default above.": "Comma-separated, no spaces. Instance types a workload may request by annotation; leave empty to allow only the default above.",
   "Command": "Command",
