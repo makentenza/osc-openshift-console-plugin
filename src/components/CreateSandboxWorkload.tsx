@@ -10,6 +10,7 @@ import {
   Card,
   CardBody,
   CardTitle,
+  Checkbox,
   DescriptionList,
   DescriptionListDescription,
   DescriptionListGroup,
@@ -91,6 +92,11 @@ interface WorkloadForm {
   nodeSelector: string;
   imagePullSecret: string;
   restartPolicy: string;
+  annotations: string;
+  runAsNonRoot: boolean;
+  strategy: string;
+  maxSurge: string;
+  maxUnavailable: string;
 }
 
 const buildManifest = (
@@ -101,7 +107,11 @@ const buildManifest = (
     name: f.name,
     image: f.image,
     ...(f.command ? { command: f.command.trim().split(/\s+/) } : {}),
-    securityContext: { privileged: false, seccompProfile: { type: 'RuntimeDefault' } },
+    securityContext: {
+      privileged: false,
+      seccompProfile: { type: 'RuntimeDefault' },
+      ...(f.runAsNonRoot ? { runAsNonRoot: true } : {}),
+    },
   };
   if (f.cpu || f.memory) {
     const res: Record<string, string> = {};
@@ -127,8 +137,11 @@ const buildManifest = (
   };
   // app={name} is forced last so a user-supplied "app" label can't break the Deployment selector.
   const labels = { ...parseKeyValueLines(f.labels), app: f.name };
-  const annotations =
-    isPeerPod && f.machineType ? { [MACHINE_TYPE_ANNOTATION]: f.machineType } : undefined;
+  const annotations = {
+    ...parseKeyValueLines(f.annotations),
+    ...(isPeerPod && f.machineType ? { [MACHINE_TYPE_ANNOTATION]: f.machineType } : {}),
+  };
+  const hasAnnotations = Object.keys(annotations).length > 0;
 
   if (f.kind === 'Pod') {
     return {
@@ -138,20 +151,34 @@ const buildManifest = (
         name: f.name,
         namespace: f.namespace,
         labels,
-        ...(annotations ? { annotations } : {}),
+        ...(hasAnnotations ? { annotations } : {}),
       },
       spec: podSpec,
     };
   }
+  const rollingUpdate =
+    f.maxSurge || f.maxUnavailable
+      ? {
+          ...(f.maxSurge ? { maxSurge: f.maxSurge } : {}),
+          ...(f.maxUnavailable ? { maxUnavailable: f.maxUnavailable } : {}),
+        }
+      : undefined;
+  const strategy =
+    f.strategy === 'Recreate'
+      ? { type: 'Recreate' }
+      : f.strategy === 'RollingUpdate' || rollingUpdate
+        ? { type: 'RollingUpdate', ...(rollingUpdate ? { rollingUpdate } : {}) }
+        : undefined;
   return {
     apiVersion: 'apps/v1',
     kind: 'Deployment',
     metadata: { name: f.name, namespace: f.namespace, labels },
     spec: {
       replicas: f.replicas,
+      ...(strategy ? { strategy } : {}),
       selector: { matchLabels: { app: f.name } },
       template: {
-        metadata: { labels, ...(annotations ? { annotations } : {}) },
+        metadata: { labels, ...(hasAnnotations ? { annotations } : {}) },
         spec: podSpec,
       },
     },
@@ -194,12 +221,18 @@ const CreateSandboxWorkload: FC = () => {
     nodeSelector: '',
     imagePullSecret: '',
     restartPolicy: '',
+    annotations: '',
+    runAsNonRoot: false,
+    strategy: '',
+    maxSurge: '',
+    maxUnavailable: '',
   }));
   const [nsOpen, setNsOpen] = useState(false);
   const [error, setError] = useState<string>();
   // The user can edit the generated manifest freely before creating (issue #9). `undefined` means
   // "not edited — track the form"; a string means the edited YAML takes over until they reset.
   const [editedManifest, setEditedManifest] = useState<string>();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const set = (patch: Partial<WorkloadForm>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -461,7 +494,7 @@ const CreateSandboxWorkload: FC = () => {
                               <HelperText>
                                 <HelperTextItem variant="indeterminate">
                                   {t(
-                                    'On-node Kata boots the microVM directly on the worker node, so those nodes must have nested virtualization (KVM) enabled. Make sure your worker nodes support it. If you are not sure — or they do not — a peer-pods runtime class runs each pod in its own cloud VM and does not need nested virtualization.',
+                                    'On-node Kata boots the microVM directly on the worker node, so those nodes must expose hardware virtualization (KVM): native on bare-metal workers, or nested virtualization on VM-based workers. Make sure your nodes have it — in a mixed cluster, on-node pods only schedule onto nodes that do. If you are not sure, a peer-pods runtime class runs each pod in its own cloud VM and needs neither.',
                                   )}
                                 </HelperTextItem>
                               </HelperText>
@@ -544,7 +577,13 @@ const CreateSandboxWorkload: FC = () => {
                   )}
                 </FormGroup>
               )}
-              <ExpandableSection toggleText={t('Advanced options (optional)')}>
+              <ExpandableSection
+                toggleText={t('Advanced options (optional)')}
+                isExpanded={advancedOpen}
+                onToggle={(_e, x) => {
+                  setAdvancedOpen(x);
+                }}
+              >
                 <FormGroup label={t('Environment variables')} fieldId="env">
                   <TextArea
                     id="env"
@@ -587,6 +626,16 @@ const CreateSandboxWorkload: FC = () => {
                     placeholder="8080"
                   />
                 </FormGroup>
+                <FormGroup label={t('Security context')} fieldId="runAsNonRoot">
+                  <Checkbox
+                    id="runAsNonRoot"
+                    label={t('Run the container as a non-root user')}
+                    isChecked={form.runAsNonRoot}
+                    onChange={(_e, v) => {
+                      set({ runAsNonRoot: v });
+                    }}
+                  />
+                </FormGroup>
                 <FormGroup label={t('Service account')} fieldId="sa">
                   <TextInput
                     id="sa"
@@ -614,6 +663,27 @@ const CreateSandboxWorkload: FC = () => {
                         {t('One KEY=value per line, added alongside app={{name}}.', {
                           name: form.name,
                         })}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+                <FormGroup label={t('Annotations')} fieldId="annotations">
+                  <TextArea
+                    id="annotations"
+                    value={form.annotations}
+                    onChange={(_e, v) => {
+                      set({ annotations: v });
+                    }}
+                    placeholder={'prometheus.io/scrape=true\nexample.com/owner=payments'}
+                    rows={2}
+                    resizeOrientation="vertical"
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>
+                        {t(
+                          'One KEY=value per line. Non-identifying metadata for tools and pipelines.',
+                        )}
                       </HelperTextItem>
                     </HelperText>
                   </FormHelperText>
@@ -670,10 +740,53 @@ const CreateSandboxWorkload: FC = () => {
                     </FormSelect>
                   </FormGroup>
                 )}
+                {form.kind === 'Deployment' && (
+                  <>
+                    <FormGroup label={t('Update strategy')} fieldId="strategy">
+                      <FormSelect
+                        id="strategy"
+                        value={form.strategy}
+                        onChange={(_e, v) => {
+                          set({ strategy: v });
+                        }}
+                      >
+                        <FormSelectOption value="" label={t('Cluster default (RollingUpdate)')} />
+                        <FormSelectOption value="RollingUpdate" label="RollingUpdate" />
+                        <FormSelectOption value="Recreate" label="Recreate" />
+                      </FormSelect>
+                    </FormGroup>
+                    {form.strategy !== 'Recreate' && (
+                      <>
+                        <FormGroup label={t('Max surge')} fieldId="maxSurge">
+                          <TextInput
+                            id="maxSurge"
+                            value={form.maxSurge}
+                            onChange={(_e, v) => {
+                              set({ maxSurge: v });
+                            }}
+                            placeholder="25%"
+                          />
+                        </FormGroup>
+                        <FormGroup label={t('Max unavailable')} fieldId="maxUnavailable">
+                          <TextInput
+                            id="maxUnavailable"
+                            value={form.maxUnavailable}
+                            onChange={(_e, v) => {
+                              set({ maxUnavailable: v });
+                            }}
+                            placeholder="25%"
+                          />
+                        </FormGroup>
+                      </>
+                    )}
+                  </>
+                )}
                 <FormHelperText>
                   <HelperText>
                     <HelperTextItem>
-                      {t('Need anything else? Edit the manifest directly on the Review step.')}
+                      {t(
+                        'For probes, volumes, or anything else, edit the manifest directly on the Review step.',
+                      )}
                     </HelperTextItem>
                   </HelperText>
                 </FormHelperText>
