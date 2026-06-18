@@ -98,4 +98,33 @@ describe('kataConfigReadiness', () => {
     );
     expect(r.phase).toBe('installing');
   });
+
+  it('flags blockedByExistingPods when uninstall is blocked by running kata pods', () => {
+    const r = kataConfigReadiness(
+      kc({
+        conditions: [
+          {
+            type: 'InProgress',
+            status: 'False',
+            reason: 'BlockedByExistingKataPods',
+            message: "Existing pods using 'kata-remote' RuntimeClass found.",
+          },
+        ],
+        kataNodes: { nodeCount: 2, readyNodeCount: 0 },
+      }),
+    );
+    expect(r.blockedByExistingPods).toBe(true);
+  });
+
+  it('does not flag blockedByExistingPods in the normal case', () => {
+    expect(kataConfigReadiness(undefined).blockedByExistingPods).toBe(false);
+    const r = kataConfigReadiness(
+      kc({
+        conditions: [{ type: 'InProgress', status: 'False' }],
+        kataNodes: { nodeCount: 1, readyNodeCount: 1 },
+        runtimeClasses: ['kata-remote'],
+      }),
+    );
+    expect(r.blockedByExistingPods).toBe(false);
+  });
 });
