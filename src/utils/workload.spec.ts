@@ -1,4 +1,4 @@
-import { suggestWorkloadName, workloadNameExists } from './workload';
+import { namespacePhase, suggestWorkloadName, workloadNameExists } from './workload';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 
 const named = (...names: string[]): K8sResourceCommon[] =>
@@ -26,6 +26,34 @@ describe('workloadNameExists', () => {
 
   it('returns false for a free name', () => {
     expect(workloadNameExists('Pod', 'delta', pods, deployments)).toBe(false);
+  });
+});
+
+describe('namespacePhase', () => {
+  const nsList = [
+    { metadata: { name: 'default' }, status: { phase: 'Active' } },
+    { metadata: { name: 'closing' }, status: { phase: 'Terminating' } },
+    { metadata: { name: 'nostatus' } },
+  ];
+
+  it('returns unknown until the namespace list has loaded', () => {
+    expect(namespacePhase('default', [], false)).toBe('unknown');
+  });
+
+  it('reports active for an Active namespace', () => {
+    expect(namespacePhase('default', nsList, true)).toBe('active');
+  });
+
+  it('reports terminating for a Terminating namespace', () => {
+    expect(namespacePhase('closing', nsList, true)).toBe('terminating');
+  });
+
+  it('reports missing when the namespace is absent from a loaded list', () => {
+    expect(namespacePhase('ghost', nsList, true)).toBe('missing');
+  });
+
+  it('treats a namespace with no status phase as active', () => {
+    expect(namespacePhase('nostatus', nsList, true)).toBe('active');
   });
 });
 

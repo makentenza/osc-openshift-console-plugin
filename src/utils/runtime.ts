@@ -48,6 +48,26 @@ export const isolationDescription = (isolation: Isolation): string => {
   }
 };
 
+/**
+ * Best-effort guess at whether on-node kata (handler `kata`) can schedule on this cluster, based on
+ * the Infrastructure platform. On-node kata boots a QEMU microVM directly on the worker, which needs
+ * the worker to expose hardware virtualization (KVM). Bare-metal and unmanaged (`None`) clusters run
+ * on real hardware and normally have it; managed cloud platforms (GCP/AWS/Azure/…) usually do *not*
+ * expose nested virt on standard instance types, so on-node kata silently fails to schedule there
+ * and peer pods (`kata-remote`) are the supported path.
+ *
+ * Returns `undefined` when the platform is unknown/empty so callers can stay informational rather
+ * than asserting. This is a heuristic for messaging only — never a hard gate (issue: on-node caveat).
+ */
+export const platformLikelySupportsNestedVirt = (platform?: string): boolean | undefined => {
+  if (!platform) return undefined;
+  const p = platform.toLowerCase();
+  if (p === 'baremetal' || p === 'none') return true;
+  if (['gcp', 'aws', 'azure', 'vsphere', 'ibmcloud', 'openstack', 'powervs', 'nutanix'].includes(p))
+    return false;
+  return undefined;
+};
+
 /** Static catalog used to enrich the create wizard cards (falls back gracefully). */
 export const runtimeClassCatalog: Record<string, { title: string; blurb: string }> = {
   kata: {

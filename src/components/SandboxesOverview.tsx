@@ -188,6 +188,8 @@ const SandboxesOverview: FC = () => {
   const peerPodsEnabled = kataConfig?.spec?.enablePeerPods;
   const sandboxRCs = runtimeClasses.filter(isSandboxRuntimeClass);
   const caaReady = `${caa?.status?.numberReady ?? 0}/${caa?.status?.desiredNumberScheduled ?? 0}`;
+  // Six tiles when the CAA tile is shown (peer pods enabled), five otherwise — keep the row at 12.
+  const tileSpan = peerPodsEnabled ? 2 : 3;
   const wlLoading = !loaded;
 
   return (
@@ -209,7 +211,7 @@ const SandboxesOverview: FC = () => {
               href="/sandboxes/workloads"
             />
           </GridItem>
-          <GridItem span={3}>
+          <GridItem span={tileSpan}>
             <StatTile
               value={counts.node}
               label={t('On-node microVMs')}
@@ -225,7 +227,7 @@ const SandboxesOverview: FC = () => {
               href="/sandboxes/workloads?isolation=peerpod"
             />
           </GridItem>
-          <GridItem span={3}>
+          <GridItem span={tileSpan}>
             <StatTile
               value={sandboxRCs.length}
               label={t('Runtime classes')}
@@ -240,6 +242,11 @@ const SandboxesOverview: FC = () => {
               loading={!kcLoaded}
             />
           </GridItem>
+          {peerPodsEnabled && (
+            <GridItem span={2}>
+              <StatTile value={caaReady} label={t('cloud-api-adaptor ready')} loading={!kcLoaded} />
+            </GridItem>
+          )}
 
           <GridItem span={12}>
             <Card>
