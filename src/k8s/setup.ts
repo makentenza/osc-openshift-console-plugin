@@ -15,7 +15,11 @@ import { toGcpNetworkPath } from '../utils/gcp';
 export type InfrastructureKind = K8sResourceCommon & {
   status?: {
     platform?: string;
-    platformStatus?: { gcp?: { projectID?: string; region?: string }; aws?: { region?: string } };
+    platformStatus?: {
+      gcp?: { projectID?: string; region?: string };
+      aws?: { region?: string };
+      azure?: { resourceGroupName?: string; networkResourceGroupName?: string };
+    };
   };
 };
 
@@ -57,6 +61,35 @@ export const useClusterPlatform = (): string | undefined => {
     name: 'cluster',
   });
   return infra?.status?.platform;
+};
+
+/** Cloud-provider facts the AWS/Azure firewall CLI needs, read best-effort from the cluster. */
+export interface CloudNetworking {
+  /** AWS region from Infrastructure.status.platformStatus.aws (Azure's isn't exposed here). */
+  region?: string;
+  /** Azure resource group that owns the network (falls back to the cluster resource group). */
+  azureResourceGroup?: string;
+}
+
+/**
+ * Best-effort cloud networking facts for the firewall step. Only the values the cloud APIs expose
+ * cluster-side are filled in (region, Azure network resource group); identifiers the cluster never
+ * stores — the AWS security group / VPC, the Azure NSG name — stay undefined so the UI can mark them
+ * as placeholders the user must supply.
+ */
+export const useCloudNetworking = (): CloudNetworking => {
+  const [infra] = useK8sWatchResource<InfrastructureKind>({
+    groupVersionKind: InfrastructureGVK,
+    name: 'cluster',
+  });
+  return useMemo(() => {
+    const ps = infra?.status?.platformStatus;
+    return {
+      // Only AWS exposes its region here; Azure carries the resource group instead.
+      region: ps?.aws?.region,
+      azureResourceGroup: ps?.azure?.networkResourceGroupName ?? ps?.azure?.resourceGroupName,
+    };
+  }, [infra]);
 };
 
 export interface GcpNetworking {

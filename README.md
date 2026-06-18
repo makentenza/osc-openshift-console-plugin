@@ -40,10 +40,18 @@ provider credentials required.
 
 ## Stack
 
-OCP **4.21**: React 17, PatternFly 6.2, `@openshift-console/dynamic-plugin-sdk` `4.21-latest`,
-`react-router-dom-v5-compat`, `ts-loader`, Yarn 4.14.1. Match the cluster's console version — the
-4.21 SDK emits the `loadPluginEntry` federation protocol the 4.21 console expects (4.22 consoles
-use a different protocol).
+OCP **4.22**: React 18, PatternFly 6.4, `@openshift-console/dynamic-plugin-sdk` `4.22-latest`,
+`react-router` v7, `swc-loader`, Yarn 4.14.1. Match the cluster's console version — the 4.22 SDK
+emits the federation protocol the 4.22 console expects (4.21 consoles use a different protocol).
+
+## Packaging
+
+In production this plugin is **shipped by the OpenShift sandboxed containers (OSC) operator** —
+there is no separate "install the plugin" step; the **Sandboxes** menu appears once the operator
+registers the ConsolePlugin and the `KataConfig` CRD exists. Across the sandboxing/confidential
+stack there are **two operators total**: the OSC operator ships this plugin *and* the Confidential
+Containers plugin (one feature-gated operator — there is no separate CoCo operator), while a
+separate **Trustee operator** ships the Confidential Attestation plugin.
 
 ## Develop
 

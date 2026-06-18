@@ -34,7 +34,13 @@ import {
   SecretModel,
 } from '../k8s/resources';
 import type { JobKind, NodeKind } from '../k8s/types';
-import { useClusterPlatform, useGcpNetworking, usePeerPodsCm } from '../k8s/setup';
+import {
+  useClusterPlatform,
+  useCloudNetworking,
+  useGcpNetworking,
+  usePeerPodsCm,
+} from '../k8s/setup';
+import { buildFirewallCommand, type FirewallProvider } from '../utils/firewall';
 import './sandbox.css';
 
 const WORKER_LABEL = 'node-role.kubernetes.io/worker';
@@ -69,8 +75,12 @@ const OpenPeerPodsFirewall: FC = () => {
   const gcp = useGcpNetworking();
   const [nodes] = useK8sWatchResource<NodeKind[]>({ groupVersionKind: NodeGVK, isList: true });
 
+  const cloud = useCloudNetworking();
   const pp = peerPodsCm?.data ?? {};
-  const isGcp = (pp.CLOUD_PROVIDER ?? (platform ? platform.toLowerCase() : 'gcp')) === 'gcp';
+  // Normalize the provider from peer-pods-cm first (it's what the cloud-api-adaptor actually uses),
+  // then the cluster platform (AWS/Azure/GCP/…), defaulting to GCP for the existing one-click flow.
+  const provider = (pp.CLOUD_PROVIDER ?? (platform ? platform.toLowerCase() : 'gcp')).toLowerCase();
+  const isGcp = provider === 'gcp';
 
   // The pod VMs live wherever peer-pods-cm points them (which can differ from the cluster's own
   // VPC); fall back to the cluster networking inferred from the worker MachineSets.
@@ -271,6 +281,52 @@ const OpenPeerPodsFirewall: FC = () => {
       setPhase('failed');
     }
   };
+
+  // AWS/Azure: no in-cluster apply, but render a fully-resolved copy-paste CLI — every value we can
+  // read from the cluster (peer-pods-cm + Infrastructure) is filled in; the rest are clear
+  // <placeholders> the user edits before running.
+  if (provider === 'aws' || provider === 'azure') {
+    const fwProvider: FirewallProvider = provider;
+    // AWS_SG_IDS may be a comma-separated list; the rule targets the pod VM SG, so use the first.
+    const awsSg = pp.AWS_SG_IDS?.split(',')[0]?.trim() || undefined;
+    const { command: cliCommand, placeholders } = buildFirewallCommand(fwProvider, {
+      region: provider === 'aws' ? (pp.AWS_REGION ?? cloud.region) : pp.AZURE_REGION,
+      awsSecurityGroupId: awsSg,
+      awsVpcId: pp.AWS_VPC_ID,
+      azureResourceGroup: pp.AZURE_RESOURCE_GROUP ?? cloud.azureResourceGroup,
+      azureNsgName: pp.AZURE_NSG_ID,
+    });
+    return (
+      <>
+        <Content component="p" className="osc-openshift-console-plugin__muted">
+          {t(
+            'Open the peer pods communication ports — TCP 15150 (agent) and UDP 9000 (VXLAN tunnel) — so your worker nodes can reach the pod VMs. The command below is filled in from your cluster; run it in your cloud CLI.',
+          )}
+        </Content>
+        <ClipboardCopy
+          isReadOnly
+          variant="expansion"
+          isExpanded
+          hoverTip={t('Copy')}
+          clickTip={t('Copied')}
+        >
+          {cliCommand}
+        </ClipboardCopy>
+        {placeholders.length > 0 && (
+          <Alert
+            variant="warning"
+            isInline
+            isPlain
+            className="osc-openshift-console-plugin__mt"
+            title={t(
+              'Replace the placeholder value(s) before running: {{placeholders}}. Find them in your peer-pods config map or cloud console.',
+              { placeholders: placeholders.join(', ') },
+            )}
+          />
+        )}
+      </>
+    );
+  }
 
   if (!isGcp) {
     return (

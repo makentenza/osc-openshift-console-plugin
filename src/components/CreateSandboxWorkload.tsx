@@ -51,9 +51,15 @@ import {
   PodModel,
 } from '../k8s/resources';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
-import type { ConfigMapKind, RuntimeClassKind } from '../k8s/types';
-import { isSandboxRuntimeClass, isolationForHandler, runtimeClassCatalog } from '../utils/runtime';
-import { suggestWorkloadName, workloadNameExists } from '../utils/workload';
+import type { ConfigMapKind, NamespaceKind, RuntimeClassKind } from '../k8s/types';
+import {
+  isSandboxRuntimeClass,
+  isolationForHandler,
+  platformLikelySupportsNestedVirt,
+  runtimeClassCatalog,
+} from '../utils/runtime';
+import { useClusterPlatform } from '../k8s/setup';
+import { namespacePhase, suggestWorkloadName, workloadNameExists } from '../utils/workload';
 import { toYaml } from '../utils/yaml';
 import { IsolationLabel } from './IsolationLabel';
 import './sandbox.css';
@@ -128,7 +134,7 @@ const CreateSandboxWorkload: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const navigate = useNavigate();
   const [runtimeClasses] = useRuntimeClasses();
-  const [namespaces] = useK8sWatchResource<K8sResourceCommon[]>({
+  const [namespaces, nsLoaded] = useK8sWatchResource<NamespaceKind[]>({
     groupVersionKind: NamespaceGVK,
     isList: true,
   });
@@ -137,9 +143,13 @@ const CreateSandboxWorkload: FC = () => {
     namespace: OSC_NAMESPACE,
     name: PEER_PODS_CM,
   });
+  const platform = useClusterPlatform();
   const sandboxRCs = useMemo(() => runtimeClasses.filter(isSandboxRuntimeClass), [runtimeClasses]);
   const defaultMachineType =
     peerPodsCm?.data?.GCP_MACHINE_TYPE ?? peerPodsCm?.data?.PODVM_INSTANCE_TYPE;
+  // On-node kata needs the worker to expose hardware virt (KVM); managed clouds usually don't, so
+  // warn (best-effort, never block) when the platform likely lacks it (issue: on-node caveat).
+  const nestedVirtUnlikely = platformLikelySupportsNestedVirt(platform) === false;
 
   const [form, setForm] = useState<WorkloadForm>(() => ({
     kind: 'Pod',
@@ -198,8 +208,13 @@ const CreateSandboxWorkload: FC = () => {
     }
   };
 
+  // Pre-validate the target namespace: creating into a missing/Terminating namespace 500s at submit
+  // with an opaque error, so resolve it from the watched list and gate Create now.
+  const nsPhase = namespacePhase(form.namespace, namespaces ?? [], nsLoaded);
+  const nsUsable = nsPhase === 'active' || nsPhase === 'unknown';
+
   const nameValid = K8S_NAME_RE.test(form.name) && form.name.length <= 63;
-  const generalValid = nameValid && !!form.namespace && !nameTaken;
+  const generalValid = nameValid && !!form.namespace && !nameTaken && nsUsable;
   const rcValid = !!form.runtimeClass;
   const containerValid = !!form.image;
 
@@ -301,6 +316,32 @@ const CreateSandboxWorkload: FC = () => {
                     ))}
                   </SelectList>
                 </Select>
+                {nsPhase === 'missing' && (
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem variant="error">
+                        {t(
+                          'Namespace "{{namespace}}" does not exist. Pick an existing namespace.',
+                          {
+                            namespace: form.namespace,
+                          },
+                        )}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                )}
+                {nsPhase === 'terminating' && (
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem variant="error">
+                        {t(
+                          'Namespace "{{namespace}}" is terminating and cannot accept new workloads.',
+                          { namespace: form.namespace },
+                        )}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                )}
               </FormGroup>
               {form.kind === 'Deployment' && (
                 <FormGroup label={t('Replicas')} fieldId="replicas">
@@ -349,7 +390,21 @@ const CreateSandboxWorkload: FC = () => {
                         <CardTitle>
                           {cat?.title ?? name} <IsolationLabel isolation={iso} />
                         </CardTitle>
-                        <CardBody>{cat?.blurb ?? t('Sandbox runtime class.')}</CardBody>
+                        <CardBody>
+                          {cat?.blurb ?? t('Sandbox runtime class.')}
+                          {iso === 'node' && nestedVirtUnlikely && (
+                            <div className="osc-openshift-console-plugin__mt">
+                              <HelperText>
+                                <HelperTextItem variant="warning">
+                                  {t(
+                                    'On-node kata needs nested virtualization. This {{platform}} cluster likely lacks it on standard nodes — the pod may stay unschedulable. Use a peer-pod runtime class instead, or a node with nested virt enabled.',
+                                    { platform },
+                                  )}
+                                </HelperTextItem>
+                              </HelperText>
+                            </div>
+                          )}
+                        </CardBody>
                       </Card>
                     </GridItem>
                   );

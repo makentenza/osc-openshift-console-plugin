@@ -101,6 +101,11 @@ export type DaemonSetKind = K8sResourceCommon & {
   };
 };
 
+/** v1 Namespace — we read status.phase (Active | Terminating) for create pre-validation. */
+export type NamespaceKind = K8sResourceCommon & {
+  status?: { phase?: string };
+};
+
 /** v1 Node — we read status.addresses + labels to compute firewall source ranges. */
 export type NodeKind = K8sResourceCommon & {
   status?: {

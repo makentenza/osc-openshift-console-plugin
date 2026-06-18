@@ -64,9 +64,19 @@ const OscSetup: FC = () => {
 
   const ppData = peerPodsCm?.data ?? {};
   const ppProvider = ppData.CLOUD_PROVIDER;
+  const ppConfigured = Boolean(ppProvider);
   const peerPodsEnabled = Boolean(kataConfig?.spec?.enablePeerPods);
   const kata = kataConfigReadiness(kataConfig);
   const podvmImageName = ppData.PODVM_IMAGE_NAME ?? ppData.PODVM_AMI_ID ?? ppData.AZURE_IMAGE_ID;
+
+  // peer-pods-cm must exist *before* KataConfig: the operator reads it while reconciling, and a
+  // KataConfig created first comes up without peer pods wired and has to be recreated. This template
+  // installs the kata-remote (peer pods) runtime, so gate the Create-KataConfig CTA until
+  // peer-pods-cm is configured (issue: peer-pods-cm ordering). Once KataConfig exists the order no
+  // longer matters, so only guard while it's still absent.
+  const blockedOnPeerPodsCm = kata.phase === 'absent' && !ppConfigured;
+  // A node-count-aware estimate while KataConfig is rolling out: each worker drains and reboots.
+  const installingNodeCount = kata.totalNodes > 0 ? kata.totalNodes : undefined;
 
   const steps: Step[] = [
     {
@@ -104,9 +114,19 @@ const OscSetup: FC = () => {
               : 'info',
       detail:
         kata.phase === 'absent' ? (
-          t(
-            'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. Each node reboots to install it, so this takes a few minutes.',
-          )
+          <>
+            {t(
+              'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. Each node reboots to install it, so this takes a few minutes.',
+            )}
+            {blockedOnPeerPodsCm && (
+              <div className="osc-openshift-console-plugin__mt">
+                <ExclamationTriangleIcon className="osc-openshift-console-plugin__icon-warning" />{' '}
+                {t(
+                  'Configure the peer pods config map first. The operator reads peer-pods-cm while installing KataConfig — creating KataConfig before it means recreating KataConfig later.',
+                )}
+              </div>
+            )}
+          </>
         ) : (
           <>
             <Flex
@@ -160,15 +180,21 @@ const OscSetup: FC = () => {
             </Flex>
             {kata.phase === 'installing' && (
               <div className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt">
-                {t(
-                  'Nodes reboot during install, so this can take several minutes depending on how many workers you have. The step turns green once the runtime is ready.',
-                )}
+                {installingNodeCount
+                  ? t(
+                      'Each node drains and reboots to install the runtime — expect roughly 5–20 min for {{nodes}} worker(s). The step turns green once the runtime is ready.',
+                      { nodes: installingNodeCount },
+                    )
+                  : t(
+                      'Each node drains and reboots to install the runtime — expect roughly 5–20 min per worker. The step turns green once the runtime is ready.',
+                    )}
               </div>
             )}
           </>
         ),
+      // Gate the CTA until peer-pods-cm exists so users can't create KataConfig in the wrong order.
       action:
-        kata.phase === 'absent'
+        kata.phase === 'absent' && !blockedOnPeerPodsCm
           ? { label: t('Create KataConfig'), href: '/sandboxes/setup/kataconfig' }
           : undefined,
     },
