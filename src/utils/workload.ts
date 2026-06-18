@@ -41,3 +41,19 @@ export const workloadNameExists = (
 export const suggestWorkloadName = (base = 'my-sandbox'): string =>
   // padEnd guards the rare case where toString(36) yields no fractional digits (empty suffix).
   `${base}-${Math.random().toString(36).slice(2, 7).padEnd(3, '0')}`;
+
+/**
+ * Parse "KEY=value" lines (one per line, from the optional env field) into container env entries.
+ * Blank lines, lines without `=`, and lines with an empty key are skipped; only the first `=`
+ * splits, so values may contain `=` (issue #9).
+ */
+export const parseEnvLines = (text: string): { name: string; value: string }[] =>
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes('='))
+    .map((line) => {
+      const i = line.indexOf('=');
+      return { name: line.slice(0, i).trim(), value: line.slice(i + 1).trim() };
+    })
+    .filter((e) => e.name !== '');

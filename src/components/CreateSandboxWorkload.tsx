@@ -6,20 +6,22 @@ import {
 } from '@openshift-console/dynamic-plugin-sdk';
 import {
   Alert,
+  Button,
   Card,
   CardBody,
   CardTitle,
-  CodeBlock,
-  CodeBlockCode,
   DescriptionList,
   DescriptionListDescription,
   DescriptionListGroup,
   DescriptionListTerm,
   EmptyState,
   EmptyStateBody,
+  ExpandableSection,
   Form,
   FormGroup,
   FormHelperText,
+  FormSelect,
+  FormSelectOption,
   Grid,
   GridItem,
   HelperText,
@@ -31,6 +33,7 @@ import {
   Select,
   SelectList,
   SelectOption,
+  TextArea,
   TextInput,
   Wizard,
   WizardStep,
@@ -59,8 +62,13 @@ import {
   runtimeClassCatalog,
 } from '../utils/runtime';
 import { useClusterPlatform } from '../k8s/setup';
-import { namespacePhase, suggestWorkloadName, workloadNameExists } from '../utils/workload';
-import { toYaml } from '../utils/yaml';
+import {
+  namespacePhase,
+  parseEnvLines,
+  suggestWorkloadName,
+  workloadNameExists,
+} from '../utils/workload';
+import { fromYaml, toYaml } from '../utils/yaml';
 import { IsolationLabel } from './IsolationLabel';
 import './sandbox.css';
 
@@ -80,6 +88,10 @@ interface WorkloadForm {
   memory: string;
   replicas: number;
   machineType: string;
+  env: string;
+  pullPolicy: string;
+  port: string;
+  serviceAccount: string;
 }
 
 const buildManifest = (
@@ -98,7 +110,17 @@ const buildManifest = (
     if (f.memory) res.memory = f.memory;
     container.resources = { requests: { ...res }, limits: { ...res } };
   }
-  const podSpec = { runtimeClassName: f.runtimeClass, containers: [container] };
+  const env = parseEnvLines(f.env);
+  if (env.length) container.env = env;
+  if (f.pullPolicy) container.imagePullPolicy = f.pullPolicy;
+  const port = Number(f.port);
+  if (f.port.trim() && Number.isInteger(port) && port > 0 && port <= 65535)
+    container.ports = [{ containerPort: port }];
+  const podSpec: Record<string, unknown> = {
+    runtimeClassName: f.runtimeClass,
+    containers: [container],
+    ...(f.serviceAccount.trim() ? { serviceAccountName: f.serviceAccount.trim() } : {}),
+  };
   const annotations =
     isPeerPod && f.machineType ? { [MACHINE_TYPE_ANNOTATION]: f.machineType } : undefined;
 
@@ -162,9 +184,16 @@ const CreateSandboxWorkload: FC = () => {
     memory: '',
     replicas: 1,
     machineType: '',
+    env: '',
+    pullPolicy: '',
+    port: '',
+    serviceAccount: '',
   }));
   const [nsOpen, setNsOpen] = useState(false);
   const [error, setError] = useState<string>();
+  // The user can edit the generated manifest freely before creating (issue #9). `undefined` means
+  // "not edited — track the form"; a string means the edited YAML takes over until they reset.
+  const [editedManifest, setEditedManifest] = useState<string>();
 
   const set = (patch: Partial<WorkloadForm>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -194,15 +223,44 @@ const CreateSandboxWorkload: FC = () => {
   );
   const isPeerPod = isolationForHandler(selectedRC?.handler) === 'peerpod';
   const manifest = useMemo(() => buildManifest(form, isPeerPod), [form, isPeerPod]);
+  const generatedYaml = useMemo(() => toYaml(manifest), [manifest]);
+
+  // What Create actually submits: the user's edited YAML if they touched it, else the generated
+  // manifest. Parse + sanity-check the edit so an invalid document blocks Create with a clear error
+  // instead of a cryptic API failure (issue #9).
+  const review = useMemo(():
+    | { ok: true; obj: Record<string, unknown> }
+    | { ok: false; error: string } => {
+    if (editedManifest === undefined) return { ok: true, obj: manifest };
+    let parsed: unknown;
+    try {
+      parsed = fromYaml(editedManifest);
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+    const obj = parsed as { kind?: unknown; metadata?: { name?: unknown } } | null;
+    if (!obj || typeof obj !== 'object' || typeof obj.kind !== 'string' || !obj.metadata?.name)
+      return { ok: false, error: t('The manifest needs a kind and a metadata.name.') };
+    return { ok: true, obj: obj };
+  }, [editedManifest, manifest, t]);
 
   const onSave = async () => {
     setError(undefined);
+    if (!review.ok) {
+      setError(review.error);
+      return;
+    }
+    const obj = review.obj;
+    const kind = obj.kind as string;
+    const meta = (obj.metadata ?? {}) as { name?: string; namespace?: string };
     try {
       await k8sCreate({
-        model: form.kind === 'Pod' ? PodModel : DeploymentModel,
-        data: manifest,
+        model: kind === 'Deployment' ? DeploymentModel : PodModel,
+        data: obj,
       });
-      void navigate(`/sandboxes/workloads/${form.kind}/${form.namespace}/${form.name}`);
+      void navigate(
+        `/sandboxes/workloads/${kind}/${meta.namespace ?? form.namespace}/${meta.name ?? form.name}`,
+      );
     } catch (e) {
       setError((e as Error)?.message ?? String(e));
     }
@@ -481,10 +539,75 @@ const CreateSandboxWorkload: FC = () => {
                   )}
                 </FormGroup>
               )}
+              <ExpandableSection toggleText={t('Advanced options (optional)')}>
+                <FormGroup label={t('Environment variables')} fieldId="env">
+                  <TextArea
+                    id="env"
+                    value={form.env}
+                    onChange={(_e, v) => {
+                      set({ env: v });
+                    }}
+                    placeholder={'KEY=value\nKEY2=value2'}
+                    rows={3}
+                    resizeOrientation="vertical"
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>{t('One KEY=value per line.')}</HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+                <FormGroup label={t('Image pull policy')} fieldId="pullPolicy">
+                  <FormSelect
+                    id="pullPolicy"
+                    value={form.pullPolicy}
+                    onChange={(_e, v) => {
+                      set({ pullPolicy: v });
+                    }}
+                  >
+                    <FormSelectOption value="" label={t('Cluster default')} />
+                    <FormSelectOption value="Always" label="Always" />
+                    <FormSelectOption value="IfNotPresent" label="IfNotPresent" />
+                    <FormSelectOption value="Never" label="Never" />
+                  </FormSelect>
+                </FormGroup>
+                <FormGroup label={t('Container port')} fieldId="port">
+                  <TextInput
+                    id="port"
+                    type="number"
+                    value={form.port}
+                    onChange={(_e, v) => {
+                      set({ port: v });
+                    }}
+                    placeholder="8080"
+                  />
+                </FormGroup>
+                <FormGroup label={t('Service account')} fieldId="sa">
+                  <TextInput
+                    id="sa"
+                    value={form.serviceAccount}
+                    onChange={(_e, v) => {
+                      set({ serviceAccount: v });
+                    }}
+                    placeholder="default"
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>
+                        {t('Need anything else? Edit the manifest directly on the Review step.')}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+              </ExpandableSection>
             </Form>
           </WizardStep>
 
-          <WizardStep name={t('Review')} id="step-review" footer={{ nextButtonText: t('Create') }}>
+          <WizardStep
+            name={t('Review')}
+            id="step-review"
+            footer={{ nextButtonText: t('Create'), isNextDisabled: !review.ok }}
+          >
             {error && (
               <Alert variant="danger" title={t('Could not create workload')} isInline>
                 {error}
@@ -557,11 +680,50 @@ const CreateSandboxWorkload: FC = () => {
               </GridItem>
               <GridItem span={7}>
                 <Card isCompact>
-                  <CardTitle>{t('Manifest preview')}</CardTitle>
+                  <CardTitle>
+                    {t('Manifest')}{' '}
+                    {editedManifest !== undefined && (
+                      <Button
+                        variant="link"
+                        isInline
+                        onClick={() => {
+                          setEditedManifest(undefined);
+                        }}
+                      >
+                        {t('Reset to form values')}
+                      </Button>
+                    )}
+                  </CardTitle>
                   <CardBody>
-                    <CodeBlock>
-                      <CodeBlockCode>{toYaml(manifest)}</CodeBlockCode>
-                    </CodeBlock>
+                    <TextArea
+                      aria-label={t('Workload manifest')}
+                      className="osc-openshift-console-plugin__mono"
+                      value={editedManifest ?? generatedYaml}
+                      onChange={(_e, v) => {
+                        setEditedManifest(v);
+                      }}
+                      rows={22}
+                      resizeOrientation="vertical"
+                    />
+                    {!review.ok ? (
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem variant="error">{review.error}</HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    ) : (
+                      editedManifest !== undefined && (
+                        <FormHelperText>
+                          <HelperText>
+                            <HelperTextItem>
+                              {t(
+                                'Editing the manifest directly — form changes won’t apply until you reset.',
+                              )}
+                            </HelperTextItem>
+                          </HelperText>
+                        </FormHelperText>
+                      )
+                    )}
                   </CardBody>
                 </Card>
               </GridItem>
