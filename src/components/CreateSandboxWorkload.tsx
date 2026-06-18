@@ -368,11 +368,9 @@ const CreateSandboxWorkload: FC = () => {
       <DocumentTitle>{t('Create sandboxed workload')}</DocumentTitle>
       <ListPageHeader title={t('Create sandboxed workload')} />
       <PageSection>
-        <Wizard
-          onClose={() => void navigate('/sandboxes/workloads')}
-          onSave={() => void onSave()}
-          height={520}
-        >
+        {/* No fixed height: let the wizard grow with its content so expanded Advanced options and
+            the Review manifest aren't clipped — the page scrolls instead. */}
+        <Wizard onClose={() => void navigate('/sandboxes/workloads')} onSave={() => void onSave()}>
           <WizardStep
             name={t('General')}
             id="step-general"
