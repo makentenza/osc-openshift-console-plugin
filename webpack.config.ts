@@ -35,7 +35,10 @@ const config: Configuration = {
           {
             loader: 'ts-loader',
             options: {
-              configFile: path.resolve(__dirname, 'tsconfig.json'),
+              // Build-only tsconfig that excludes *.spec.ts(x); the in-cluster Docker build
+              // type-checks the whole program, and the specs use Jest globals with no
+              // @types/jest on this branch. Tests still run via jest's own config.
+              configFile: path.resolve(__dirname, 'tsconfig.build.json'),
             },
           },
         ],
