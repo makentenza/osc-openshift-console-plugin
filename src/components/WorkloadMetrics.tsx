@@ -5,7 +5,11 @@ import { useTranslation } from 'react-i18next';
 import './sandbox.css';
 
 /** Minimal dependency-free sparkline from a series of numbers. */
-const Sparkline: FC<{ values: number[]; color: string }> = ({ values, color }) => {
+const Sparkline: FC<{ values: number[]; color: string; label: string }> = ({
+  values,
+  color,
+  label,
+}) => {
   if (!values.length) return <div className="osc-openshift-console-plugin__muted">—</div>;
   const w = 240;
   const h = 48;
@@ -20,7 +24,13 @@ const Sparkline: FC<{ values: number[]; color: string }> = ({ values, color }) =
     })
     .join(' ');
   return (
-    <svg width={w} height={h} className="osc-openshift-console-plugin__spark" role="img">
+    <svg
+      width={w}
+      height={h}
+      className="osc-openshift-console-plugin__spark"
+      role="img"
+      aria-label={label}
+    >
       <polyline points={pts} fill="none" stroke={color} strokeWidth={2} />
     </svg>
   );
@@ -45,13 +55,14 @@ const MetricCard: FC<{
   color: string;
   format: (n?: number) => string;
 }> = ({ title, query, namespace, color, format }) => {
+  const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const { values, last } = useSeries(query, namespace);
   return (
     <Card isCompact>
       <CardTitle>{title}</CardTitle>
       <CardBody>
         <div className="osc-openshift-console-plugin__stat-value">{format(last)}</div>
-        <Sparkline values={values} color={color} />
+        <Sparkline values={values} color={color} label={t('{{metric}} trend', { metric: title })} />
       </CardBody>
     </Card>
   );
