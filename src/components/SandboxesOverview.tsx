@@ -279,7 +279,7 @@ const SandboxesOverview: FC = () => {
                   </Flex>
                 ) : !kataConfig ? (
                   <Label color="red" icon={<ExclamationTriangleIcon />}>
-                    {t('KataConfig not found — OSC is not installed')}
+                    {t('KataConfig not found — OpenShift sandboxed containers is not installed')}
                   </Label>
                 ) : (
                   <DescriptionList isHorizontal>
