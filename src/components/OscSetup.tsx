@@ -49,21 +49,11 @@ interface Step {
 
 const StatusIcon: FC<{ status: Status }> = ({ status }) => {
   if (status === 'done')
-    return (
-      <CheckCircleIcon
-        className="osc-openshift-console-plugin__icon-success"
-        color="var(--pf-t--global--icon--color--status--success--default)"
-      />
-    );
+    return <CheckCircleIcon className="osc-openshift-console-plugin__icon-success" />;
   if (status === 'warn')
     return <ExclamationTriangleIcon className="osc-openshift-console-plugin__icon-warning" />;
   if (status === 'info')
-    return (
-      <InfoCircleIcon
-        className="osc-openshift-console-plugin__icon-info"
-        color="var(--pf-t--global--icon--color--status--info--default)"
-      />
-    );
+    return <InfoCircleIcon className="osc-openshift-console-plugin__icon-info" />;
   return <PlusCircleIcon className="osc-openshift-console-plugin__muted" />;
 };
 
@@ -338,7 +328,7 @@ const OscSetup: FC = () => {
       <PageSection>
         <Card>
           <CardTitle>
-            {t('Configuration checklist')}
+            {t('Setup checklist')}
             {platform && (
               <>
                 {' '}
