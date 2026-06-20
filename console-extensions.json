@@ -11,6 +11,20 @@
     }
   },
   {
+    "type": "console.model-metadata",
+    "properties": {
+      "model": {
+        "group": "kataconfiguration.openshift.io",
+        "version": "v1",
+        "kind": "KataConfig"
+      },
+      "abbr": "KC",
+      "label": "KataConfig",
+      "labelPlural": "KataConfigs",
+      "color": "#0066cc"
+    }
+  },
+  {
     "type": "console.navigation/section",
     "properties": {
       "id": "sandboxes",
