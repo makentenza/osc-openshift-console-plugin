@@ -142,6 +142,7 @@
   "Network received": "Network received",
   "Network transmitted": "Network transmitted",
   "No action needed — the operator builds and registers the pod VM image automatically when KataConfig finishes installing.": "No action needed — the operator builds and registers the pod VM image automatically when KataConfig finishes installing.",
+  "No GPU nodes detected in this cluster — this runtime class needs an NVIDIA GPU node and will not schedule here until one is present.": "No GPU nodes detected in this cluster — this runtime class needs an NVIDIA GPU node and will not schedule here until one is present.",
   "No kata runtime classes were found. Check that the KataConfig has finished installing on the Sandboxes overview page.": "No kata runtime classes were found. Check that the KataConfig has finished installing on the Sandboxes overview page.",
   "No pods found for this deployment.": "No pods found for this deployment.",
   "No recent events.": "No recent events.",
