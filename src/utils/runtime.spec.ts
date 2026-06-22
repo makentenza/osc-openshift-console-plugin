@@ -1,6 +1,8 @@
 import {
+  isGpuRuntimeClass,
   isolationForHandler,
   isSandboxRuntimeClass,
+  nodeHasNvidiaGpu,
   platformLikelySupportsNestedVirt,
 } from './runtime';
 
@@ -44,5 +46,37 @@ describe('platformLikelySupportsNestedVirt', () => {
     expect(platformLikelySupportsNestedVirt(undefined)).toBeUndefined();
     expect(platformLikelySupportsNestedVirt('')).toBeUndefined();
     expect(platformLikelySupportsNestedVirt('SomethingNew')).toBeUndefined();
+  });
+});
+
+describe('isGpuRuntimeClass', () => {
+  it('matches GPU runtime classes by handler or name', () => {
+    expect(isGpuRuntimeClass({ handler: 'kata-nvidia-gpu' })).toBe(true);
+    expect(isGpuRuntimeClass({ metadata: { name: 'kata-nvidia-gpu' } })).toBe(true);
+  });
+
+  it('does not match non-GPU runtime classes', () => {
+    expect(isGpuRuntimeClass({ handler: 'kata' })).toBe(false);
+    expect(isGpuRuntimeClass({ handler: 'kata-remote' })).toBe(false);
+    expect(isGpuRuntimeClass({})).toBe(false);
+  });
+});
+
+describe('nodeHasNvidiaGpu', () => {
+  it('detects the device-plugin allocatable', () => {
+    expect(nodeHasNvidiaGpu({ status: { allocatable: { 'nvidia.com/gpu': '1' } } })).toBe(true);
+  });
+
+  it('detects the NFD NVIDIA PCI vendor label', () => {
+    expect(
+      nodeHasNvidiaGpu({
+        metadata: { labels: { 'feature.node.kubernetes.io/pci-10de.present': 'true' } },
+      }),
+    ).toBe(true);
+  });
+
+  it('is false for a node with no GPU signal', () => {
+    expect(nodeHasNvidiaGpu({ status: { allocatable: { cpu: '4' } } })).toBe(false);
+    expect(nodeHasNvidiaGpu({})).toBe(false);
   });
 });

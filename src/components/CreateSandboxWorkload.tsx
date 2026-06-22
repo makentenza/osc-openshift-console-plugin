@@ -53,14 +53,21 @@ import {
   DeploymentGVK,
   DeploymentModel,
   NamespaceGVK,
+  NodeGVK,
   OSC_NAMESPACE,
   PEER_PODS_CM,
   PodGVK,
   PodModel,
 } from '../k8s/resources';
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
-import type { ConfigMapKind, NamespaceKind, RuntimeClassKind } from '../k8s/types';
-import { isSandboxRuntimeClass, isolationForHandler, runtimeClassCatalog } from '../utils/runtime';
+import type { ConfigMapKind, NamespaceKind, NodeKind, RuntimeClassKind } from '../k8s/types';
+import {
+  isGpuRuntimeClass,
+  isSandboxRuntimeClass,
+  isolationForHandler,
+  nodeHasNvidiaGpu,
+  runtimeClassCatalog,
+} from '../utils/runtime';
 import {
   namespacePhase,
   parseEnvLines,
@@ -224,6 +231,13 @@ const CreateSandboxWorkload: FC = () => {
     name: PEER_PODS_CM,
   });
   const sandboxRCs = useMemo(() => runtimeClasses.filter(isSandboxRuntimeClass), [runtimeClasses]);
+  // GPU runtime classes (kata-nvidia-gpu) can't schedule without a GPU node; flag them when none
+  // exists rather than hiding — a GPU node may join a mixed cluster later (issue #10).
+  const [clusterNodes] = useK8sWatchResource<NodeKind[]>({
+    groupVersionKind: NodeGVK,
+    isList: true,
+  });
+  const hasGpuNode = useMemo(() => (clusterNodes ?? []).some(nodeHasNvidiaGpu), [clusterNodes]);
   const defaultMachineType =
     peerPodsCm?.data?.GCP_MACHINE_TYPE ?? peerPodsCm?.data?.PODVM_INSTANCE_TYPE;
   // Instance types a peer-pod workload may request (peer-pods-cm PODVM_INSTANCE_TYPES), offered as a
@@ -533,6 +547,7 @@ const CreateSandboxWorkload: FC = () => {
                   const iso = isolationForHandler(rc.handler);
                   const cat = runtimeClassCatalog[name];
                   const selected = form.runtimeClass === name;
+                  const gpuUnavailable = isGpuRuntimeClass(rc) && !hasGpuNode;
                   return (
                     <GridItem span={4} key={name}>
                       <Card
@@ -552,6 +567,17 @@ const CreateSandboxWorkload: FC = () => {
                                 <HelperTextItem variant="indeterminate">
                                   {t(
                                     'On-node Kata boots the microVM directly on the worker node, so those nodes must expose hardware virtualization (KVM): native on bare-metal workers, or nested virtualization on VM-based workers. Make sure your nodes have it — in a mixed cluster, on-node pods only schedule onto nodes that do. If you are not sure, a peer-pods runtime class runs each pod in its own cloud VM and needs neither.',
+                                  )}
+                                </HelperTextItem>
+                              </HelperText>
+                            </div>
+                          )}
+                          {gpuUnavailable && (
+                            <div className="osc-openshift-console-plugin__mt">
+                              <HelperText>
+                                <HelperTextItem variant="warning">
+                                  {t(
+                                    'No GPU nodes detected in this cluster — this runtime class needs an NVIDIA GPU node and will not schedule here until one is present.',
                                   )}
                                 </HelperTextItem>
                               </HelperText>

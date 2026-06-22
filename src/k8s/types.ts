@@ -106,10 +106,11 @@ export type NamespaceKind = K8sResourceCommon & {
   status?: { phase?: string };
 };
 
-/** v1 Node — we read status.addresses + labels to compute firewall source ranges. */
+/** v1 Node — status.addresses + labels for firewall source ranges; allocatable + labels for GPU detection. */
 export type NodeKind = K8sResourceCommon & {
   status?: {
     addresses?: { type: string; address: string }[];
+    allocatable?: Record<string, string>;
   };
 };
 
