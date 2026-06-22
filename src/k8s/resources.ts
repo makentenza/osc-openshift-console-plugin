@@ -202,6 +202,13 @@ export const FIREWALL_CRED_SECRET = 'osc-peerpods-firewall-creds';
 export const FIREWALL_JOB = 'osc-open-peerpods-firewall';
 /** The GCP firewall rule name (matches the Red Hat docs / issue #5). */
 export const FIREWALL_RULE_NAME = 'allow-port-15150-restricted';
+/**
+ * Second GCP firewall rule: the VXLAN overlay (UDP 9000) between worker and pod VM.
+ * It needs the cluster's internal source range (10.0.0.0/8), NOT the worker IPs the
+ * agent (15150) rule uses — combining both ports into a single rule drops the VXLAN
+ * traffic, so the pod boots but is unreachable (issue #38).
+ */
+export const VXLAN_FIREWALL_RULE_NAME = 'allow-vxlan-peerpods';
 /** Container image that provides the gcloud CLI for the in-cluster apply Job. */
 export const CLOUD_SDK_IMAGE = 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim';
 

@@ -36,6 +36,7 @@ import {
   NodeGVK,
   OSC_NAMESPACE,
   SecretModel,
+  VXLAN_FIREWALL_RULE_NAME,
 } from '../k8s/resources';
 import type { JobKind, NodeKind } from '../k8s/types';
 import {
@@ -193,12 +194,21 @@ const OpenPeerPodsFirewall: FC = () => {
   }, [nodes, usePublicIp]);
 
   const command = [
+    '# 1) Kata agent port (TCP 15150) — from your worker nodes',
     `gcloud compute firewall-rules create ${FIREWALL_RULE_NAME} \\`,
     `  --project=${project ?? '<project_id>'} \\`,
     `  --network=${network ?? '<network>'} \\`,
     `  --direction=INGRESS \\`,
-    `  --allow=tcp:15150,udp:9000 \\`,
+    `  --allow=tcp:15150 \\`,
     `  --source-ranges=${sourceRanges}`,
+    '',
+    "# 2) VXLAN overlay (UDP 9000) — from the cluster's internal network",
+    `gcloud compute firewall-rules create ${VXLAN_FIREWALL_RULE_NAME} \\`,
+    `  --project=${project ?? '<project_id>'} \\`,
+    `  --network=${network ?? '<network>'} \\`,
+    `  --direction=INGRESS \\`,
+    `  --allow=udp:9000 \\`,
+    '  --source-ranges=10.0.0.0/8',
   ].join('\n');
 
   // ---- in-cluster apply (CCO-minted credential + gcloud Job) ----
@@ -256,13 +266,22 @@ const OpenPeerPodsFirewall: FC = () => {
     'set -euo pipefail',
     'export CLOUDSDK_CORE_DISABLE_PROMPTS=1',
     'gcloud auth activate-service-account --key-file=/creds/service_account.json',
-    `echo ">>> Ensuring firewall rule ${FIREWALL_RULE_NAME} on ${network ?? ''}"`,
+    // Rule 1 — kata agent port (TCP 15150) from the worker nodes.
+    `echo ">>> Ensuring ${FIREWALL_RULE_NAME} (tcp:15150) on ${network ?? ''}"`,
     `if gcloud compute firewall-rules describe ${FIREWALL_RULE_NAME} --project=${project ?? ''} >/dev/null 2>&1; then`,
-    `  gcloud compute firewall-rules update ${FIREWALL_RULE_NAME} --project=${project ?? ''} --allow=tcp:15150,udp:9000 --source-ranges=${sourceRanges}`,
+    `  gcloud compute firewall-rules update ${FIREWALL_RULE_NAME} --project=${project ?? ''} --allow=tcp:15150 --source-ranges=${sourceRanges}`,
     'else',
-    `  gcloud compute firewall-rules create ${FIREWALL_RULE_NAME} --project=${project ?? ''} --network=${network ?? ''} --direction=INGRESS --allow=tcp:15150,udp:9000 --source-ranges=${sourceRanges} --description="OSC peer pods: agent 15150 + VXLAN 9000 (osc-openshift-console-plugin)"`,
+    `  gcloud compute firewall-rules create ${FIREWALL_RULE_NAME} --project=${project ?? ''} --network=${network ?? ''} --direction=INGRESS --allow=tcp:15150 --source-ranges=${sourceRanges} --description="OSC peer pods: kata agent 15150 (osc-openshift-console-plugin)"`,
+    'fi',
+    // Rule 2 — VXLAN overlay (UDP 9000) from the cluster's internal network (10.0.0.0/8).
+    `echo ">>> Ensuring ${VXLAN_FIREWALL_RULE_NAME} (udp:9000) on ${network ?? ''}"`,
+    `if gcloud compute firewall-rules describe ${VXLAN_FIREWALL_RULE_NAME} --project=${project ?? ''} >/dev/null 2>&1; then`,
+    `  gcloud compute firewall-rules update ${VXLAN_FIREWALL_RULE_NAME} --project=${project ?? ''} --allow=udp:9000 --source-ranges=10.0.0.0/8`,
+    'else',
+    `  gcloud compute firewall-rules create ${VXLAN_FIREWALL_RULE_NAME} --project=${project ?? ''} --network=${network ?? ''} --direction=INGRESS --allow=udp:9000 --source-ranges=10.0.0.0/8 --description="OSC peer pods: VXLAN 9000 (osc-openshift-console-plugin)"`,
     'fi',
     `gcloud compute firewall-rules describe ${FIREWALL_RULE_NAME} --project=${project ?? ''} --format="yaml(name,network,direction,allowed,sourceRanges)"`,
+    `gcloud compute firewall-rules describe ${VXLAN_FIREWALL_RULE_NAME} --project=${project ?? ''} --format="yaml(name,network,direction,allowed,sourceRanges)"`,
   ].join('\n');
 
   const firewallJob: K8sResourceCommon & { spec: Record<string, unknown> } = {

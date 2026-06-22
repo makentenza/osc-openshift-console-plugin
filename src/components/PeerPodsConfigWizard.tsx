@@ -198,7 +198,6 @@ const PeerPodsConfigWizard: FC = () => {
     setValues((prev) => ({ ...prev, [key]: v }));
   };
 
-  const disableCvm = (values.DISABLECVM ?? existing?.data?.DISABLECVM ?? 'true') === 'true';
   const usePublicIp = (values.USE_PUBLIC_IP ?? existing?.data?.USE_PUBLIC_IP) === 'true';
 
   const data: Record<string, string> = { CLOUD_PROVIDER: provider };
@@ -211,7 +210,6 @@ const PeerPodsConfigWizard: FC = () => {
   data.PEERPODS_LIMIT_PER_NODE =
     fieldVal('PEERPODS_LIMIT_PER_NODE').trim() || DEFAULTS.PEERPODS_LIMIT_PER_NODE;
   data.ROOT_VOLUME_SIZE = fieldVal('ROOT_VOLUME_SIZE').trim() || DEFAULTS.ROOT_VOLUME_SIZE;
-  data.DISABLECVM = disableCvm ? 'true' : 'false';
   if (usePublicIp) data.USE_PUBLIC_IP = 'true';
   // The operator fills PODVM_AMI_ID in after KataConfig runs, so the user doesn't (issue #28). Seed
   // an empty key on a brand-new AWS config map so the operator populates it; never overwrite a value
@@ -314,26 +312,6 @@ const PeerPodsConfigWizard: FC = () => {
                       </ExpandableSection>
                     </>
                   )}
-
-                  <FormGroup label={t('Disable confidential VM (CVM)')} fieldId="pp-disablecvm">
-                    <Switch
-                      id="pp-disablecvm"
-                      isChecked={disableCvm}
-                      onChange={(_e, c) => {
-                        set('DISABLECVM', c ? 'true' : 'false');
-                      }}
-                      label={t('Run regular (non-confidential) pod VMs')}
-                    />
-                    <FormHelperText>
-                      <HelperText>
-                        <HelperTextItem>
-                          {t(
-                            'Cluster-wide setting. Leave on for OpenShift sandboxed containers — peer pods run as regular (non-confidential) cloud VMs. Confidential Containers turn it off to boot pod VMs inside a TEE; on clouds that path is Azure-only (not AWS/GCP), runs only as peer pods (never nested), and needs the Red Hat build of Trustee attestation — set it up via the Confidential Containers operator, not here.',
-                          )}
-                        </HelperTextItem>
-                      </HelperText>
-                    </FormHelperText>
-                  </FormGroup>
 
                   <ExpandableSection
                     toggleText={t('Advanced options')}
