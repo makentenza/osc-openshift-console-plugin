@@ -1,4 +1,4 @@
-import type { Isolation, RuntimeClassKind } from '../k8s/types';
+import type { Isolation, NodeKind, RuntimeClassKind } from '../k8s/types';
 
 /** Handlers that mean "peer pod" (workload runs in a separate cloud VM). */
 const PEER_POD_HANDLERS = new Set(['kata-remote']);
@@ -25,6 +25,19 @@ export const buildIsolationMap = (
 /** Is this RuntimeClass one of OSC's sandbox runtimes? */
 export const isSandboxRuntimeClass = (rc: RuntimeClassKind): boolean =>
   isolationForHandler(rc.handler) !== 'unknown';
+
+/** Does this RuntimeClass target NVIDIA GPU passthrough (e.g. kata-nvidia-gpu)? */
+export const isGpuRuntimeClass = (rc: RuntimeClassKind): boolean =>
+  `${rc.handler ?? ''} ${rc.metadata?.name ?? ''}`.toLowerCase().includes('gpu');
+
+/**
+ * Does this Node expose an NVIDIA GPU? True when the device plugin advertises an
+ * `nvidia.com/gpu` allocatable, or NFD has labeled the NVIDIA PCI vendor (10de).
+ * Used to flag the GPU runtime class as unschedulable when no GPU node exists.
+ */
+export const nodeHasNvidiaGpu = (node: NodeKind): boolean =>
+  Boolean(node.status?.allocatable?.['nvidia.com/gpu']) ||
+  node.metadata?.labels?.['feature.node.kubernetes.io/pci-10de.present'] === 'true';
 
 export const isolationLabel = (isolation: Isolation): string => {
   switch (isolation) {
