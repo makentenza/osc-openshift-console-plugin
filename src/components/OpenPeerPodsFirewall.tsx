@@ -405,9 +405,13 @@ const OpenPeerPodsFirewall: FC = () => {
     return (
       <>
         <Content component="p" className="osc-openshift-console-plugin__muted">
-          {t(
-            'Open the peer pods communication ports (15150 and 9000) so your worker nodes can reach the pod VMs. The command below is filled in from your cluster — run it in your cloud CLI.',
-          )}
+          {provider === 'azure'
+            ? t(
+                'On Azure, peer pods reach the pod VMs over the cluster VNet, which the default network security group already allows — so this step is usually not required. Run the command below only if you have restricted intra-VNet traffic (custom NSG rules). It opens ports 15150 and 9000, filled in from your cluster.',
+              )
+            : t(
+                'Open the peer pods communication ports (15150 and 9000) so your worker nodes can reach the pod VMs. The command below is filled in from your cluster — run it in your cloud CLI.',
+              )}
         </Content>
         <CommandBlock command={cliCommand} />
         {placeholders.length > 0 && (
