@@ -266,3 +266,56 @@ export const useAwsNetworking = (): AwsNetworking => {
     };
   }, [infra, machineSets]);
 };
+
+export interface AzureNetworking {
+  subscriptionId?: string;
+  region?: string;
+  resourceGroup?: string;
+  /** Full ARM resource id of the worker subnet (peer-pods-cm AZURE_SUBNET_ID). */
+  subnetId?: string;
+  /** Full ARM resource id of the node network security group (peer-pods-cm AZURE_NSG_ID). */
+  nsgId?: string;
+}
+
+/**
+ * Best-effort prefill of Azure values from the cluster's cloud-provider-config, so the peer-pods
+ * config map starts filled in like GCP/AWS. The `cloud-provider-config` ConfigMap
+ * (openshift-config) carries the subscription id, region, resource group, and vnet/subnet/NSG
+ * names — none of them secrets. The peer-pods AZURE_SUBNET_ID / AZURE_NSG_ID want the FULL ARM
+ * resource ids, so we assemble those from the names.
+ */
+export const useAzureNetworking = (): AzureNetworking => {
+  const [cm] = useK8sWatchResource<ConfigMapKind>({
+    groupVersionKind: ConfigMapGVK,
+    namespace: 'openshift-config',
+    name: 'cloud-provider-config',
+  });
+  return useMemo(() => {
+    const raw = cm?.data?.config;
+    if (!raw) return {};
+    let c: Record<string, string | undefined>;
+    try {
+      c = JSON.parse(raw) as Record<string, string | undefined>;
+    } catch {
+      return {};
+    }
+    const sub = c.subscriptionId;
+    const vnetRg = c.vnetResourceGroup || c.resourceGroup;
+    const nsgRg = c.securityGroupResourceGroup || c.resourceGroup;
+    const subnetId =
+      sub && vnetRg && c.vnetName && c.subnetName
+        ? `/subscriptions/${sub}/resourceGroups/${vnetRg}/providers/Microsoft.Network/virtualNetworks/${c.vnetName}/subnets/${c.subnetName}`
+        : undefined;
+    const nsgId =
+      sub && nsgRg && c.securityGroupName
+        ? `/subscriptions/${sub}/resourceGroups/${nsgRg}/providers/Microsoft.Network/networkSecurityGroups/${c.securityGroupName}`
+        : undefined;
+    return {
+      subscriptionId: sub,
+      region: c.location,
+      resourceGroup: c.resourceGroup,
+      subnetId,
+      nsgId,
+    };
+  }, [cm]);
+};
