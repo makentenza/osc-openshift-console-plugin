@@ -36,6 +36,7 @@ import { ConfigMapModel, OSC_NAMESPACE, PEER_PODS_CM } from '../k8s/resources';
 import type { ConfigMapKind } from '../k8s/types';
 import {
   useAwsNetworking,
+  useAzureNetworking,
   useClusterPlatform,
   useGcpNetworking,
   usePeerPodsCm,
@@ -96,8 +97,17 @@ const FIELDS: Record<string, Field[]> = {
     { key: 'AZURE_RESOURCE_GROUP', label: 'Resource group' },
     { key: 'AZURE_SUBNET_ID', label: 'Subnet ID' },
     { key: 'AZURE_NSG_ID', label: 'Network security group ID' },
-    { key: 'AZURE_INSTANCE_SIZE', label: 'Instance size', placeholder: 'Standard_D2as_v5' },
-    { key: 'AZURE_IMAGE_ID', label: 'Pod VM image ID' },
+    {
+      key: 'AZURE_INSTANCE_SIZE',
+      label: 'Instance size',
+      placeholder: 'Standard_DC2as_v5',
+      help: 'For confidential containers use a Confidential VM size — AMD SEV-SNP (e.g. Standard_DC2as_v5) or Intel TDX (e.g. Standard_EC2eds_v5). A non-confidential size runs peer pods without a TEE, so attestation cannot work.',
+    },
+    {
+      key: 'AZURE_IMAGE_ID',
+      label: 'Pod VM image ID (optional)',
+      help: 'Leave blank — the OpenShift sandboxed containers operator builds a pod VM image from your cluster credentials after KataConfig runs and fills this in for you. Set it only to pin a pre-built Azure Compute Gallery image id.',
+    },
   ],
 };
 
@@ -161,6 +171,7 @@ const PeerPodsConfigWizard: FC = () => {
   const [existing, loaded] = usePeerPodsCm();
   const gcp = useGcpNetworking();
   const aws = useAwsNetworking();
+  const azure = useAzureNetworking();
   const platform = useClusterPlatform();
 
   const [values, setValues] = useState<Record<string, string>>({});
@@ -186,12 +197,22 @@ const PeerPodsConfigWizard: FC = () => {
     AWS_SUBNET_ID: aws.subnetId,
     AWS_SG_IDS: aws.securityGroupIds,
   };
+  // Prefill Azure from the cluster's cloud-provider-config: subscription, region, resource group,
+  // and the full ARM ids of the worker subnet + node NSG (peer-pods wants full resource ids).
+  const azurePrefill: Record<string, string | undefined> = {
+    AZURE_SUBSCRIPTION_ID: azure.subscriptionId,
+    AZURE_REGION: azure.region,
+    AZURE_RESOURCE_GROUP: azure.resourceGroup,
+    AZURE_SUBNET_ID: azure.subnetId,
+    AZURE_NSG_ID: azure.nsgId,
+  };
 
   const fieldVal = (key: string): string => {
     if (values[key] !== undefined) return values[key];
     if (existing?.data?.[key] !== undefined) return existing.data[key];
     if (provider === 'gcp' && gcpPrefill[key]) return gcpPrefill[key];
     if (provider === 'aws' && awsPrefill[key]) return awsPrefill[key];
+    if (provider === 'azure' && azurePrefill[key]) return azurePrefill[key];
     return DEFAULTS[key] ?? '';
   };
   const set = (key: string, v: string) => {
@@ -220,6 +241,14 @@ const PeerPodsConfigWizard: FC = () => {
     existing?.data?.PODVM_AMI_ID === undefined
   )
     data.PODVM_AMI_ID = '';
+  // Same for Azure: the operator builds a pod VM image and fills AZURE_IMAGE_ID after KataConfig
+  // runs, so seed an empty key on a brand-new config map and never overwrite an existing value.
+  if (
+    provider === 'azure' &&
+    data.AZURE_IMAGE_ID === undefined &&
+    existing?.data?.AZURE_IMAGE_ID === undefined
+  )
+    data.AZURE_IMAGE_ID = '';
 
   const cm: ConfigMapKind & K8sResourceCommon = existing
     ? { ...existing, data: { ...existing.data, ...data } }
