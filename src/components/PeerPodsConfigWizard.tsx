@@ -101,7 +101,13 @@ const FIELDS: Record<string, Field[]> = {
       key: 'AZURE_INSTANCE_SIZE',
       label: 'Instance size',
       placeholder: 'Standard_DC2as_v5',
-      help: 'For confidential containers use a Confidential VM size — AMD SEV-SNP (e.g. Standard_DC2as_v5) or Intel TDX (e.g. Standard_EC2eds_v5). A non-confidential size runs peer pods without a TEE, so attestation cannot work.',
+      help: 'The default Confidential VM size, used when a workload does not request one — AMD SEV-SNP (e.g. Standard_DC2as_v5) or Intel TDX (e.g. Standard_EC2eds_v5). A non-confidential size runs peer pods without a TEE, so attestation cannot work.',
+    },
+    {
+      key: 'AZURE_INSTANCE_SIZES',
+      label: 'Allowed instance sizes',
+      placeholder: 'Standard_DC2as_v5,Standard_DC4as_v5,Standard_EC2eds_v5',
+      help: 'Comma-separated, no spaces. Additional Confidential VM sizes a workload may request by annotation (io.katacontainers.config.hypervisor.machine_type); leave empty to allow only the default size above.',
     },
     {
       key: 'AZURE_IMAGE_ID',
