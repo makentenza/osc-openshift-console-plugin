@@ -30,14 +30,10 @@ import {
   GridItem,
   HelperText,
   HelperTextItem,
-  MenuToggle,
   NumberInput,
   PageSection,
   Popover,
   Radio,
-  Select,
-  SelectList,
-  SelectOption,
   TextArea,
   TextInput,
   Wizard,
@@ -77,6 +73,7 @@ import {
 } from '../utils/workload';
 import { fromYaml, toYaml } from '../utils/yaml';
 import { IsolationLabel } from './IsolationLabel';
+import { NamespaceSelect } from './NamespaceSelect';
 import './sandbox.css';
 
 const MACHINE_TYPE_ANNOTATION = 'io.katacontainers.config.hypervisor.machine_type';
@@ -225,6 +222,13 @@ const CreateSandboxWorkload: FC = () => {
     groupVersionKind: NamespaceGVK,
     isList: true,
   });
+  const nsNames = useMemo(
+    () =>
+      [
+        ...new Set((namespaces ?? []).map((n) => n.metadata?.name).filter(Boolean) as string[]),
+      ].sort((a, b) => a.localeCompare(b)),
+    [namespaces],
+  );
   const [peerPodsCm] = useK8sWatchResource<ConfigMapKind>({
     groupVersionKind: ConfigMapGVK,
     namespace: OSC_NAMESPACE,
@@ -280,7 +284,6 @@ const CreateSandboxWorkload: FC = () => {
     maxSurge: '',
     maxUnavailable: '',
   }));
-  const [nsOpen, setNsOpen] = useState(false);
   const [error, setError] = useState<string>();
   // The user can edit the generated manifest freely before creating (issue #9). `undefined` means
   // "not edited — track the form"; a string means the edited YAML takes over until they reset.
@@ -445,34 +448,14 @@ const CreateSandboxWorkload: FC = () => {
                 )}
               </FormGroup>
               <FormGroup label={t('Namespace')} isRequired fieldId="namespace">
-                <Select
-                  isOpen={nsOpen}
-                  selected={form.namespace}
-                  onSelect={(_e, v) => {
-                    set({ namespace: v as string });
-                    setNsOpen(false);
+                <NamespaceSelect
+                  id="namespace"
+                  value={form.namespace}
+                  onChange={(namespace) => {
+                    set({ namespace });
                   }}
-                  onOpenChange={setNsOpen}
-                  toggle={(ref) => (
-                    <MenuToggle
-                      ref={ref}
-                      isFullWidth
-                      onClick={() => {
-                        setNsOpen(!nsOpen);
-                      }}
-                    >
-                      {form.namespace}
-                    </MenuToggle>
-                  )}
-                >
-                  <SelectList className="osc-openshift-console-plugin__ns-list">
-                    {(namespaces ?? []).map((ns) => (
-                      <SelectOption key={ns.metadata?.name} value={ns.metadata?.name}>
-                        {ns.metadata?.name}
-                      </SelectOption>
-                    ))}
-                  </SelectList>
-                </Select>
+                  namespaces={nsNames}
+                />
                 {nsPhase === 'missing' && (
                   <FormHelperText>
                     <HelperText>
