@@ -242,13 +242,21 @@ const CreateSandboxWorkload: FC = () => {
     isList: true,
   });
   const hasGpuNode = useMemo(() => (clusterNodes ?? []).some(nodeHasNvidiaGpu), [clusterNodes]);
+  // The default instance the operator picks when a workload requests none: GCP_MACHINE_TYPE (GCP),
+  // PODVM_INSTANCE_TYPE (AWS), or AZURE_INSTANCE_SIZE (Azure).
   const defaultMachineType =
-    peerPodsCm?.data?.GCP_MACHINE_TYPE ?? peerPodsCm?.data?.PODVM_INSTANCE_TYPE;
-  // Instance types a peer-pod workload may request (peer-pods-cm PODVM_INSTANCE_TYPES), offered as a
-  // dropdown so the machine_type annotation stays within the allowed set (§3.8). The default type is
-  // always offered too, even if it isn't listed.
-  const allowedInstanceTypes = (peerPodsCm?.data?.PODVM_INSTANCE_TYPES ?? '')
-    .split(',')
+    peerPodsCm?.data?.GCP_MACHINE_TYPE ??
+    peerPodsCm?.data?.PODVM_INSTANCE_TYPE ??
+    peerPodsCm?.data?.AZURE_INSTANCE_SIZE;
+  // Instances a peer-pod workload may request — PODVM_INSTANCE_TYPES (AWS) or AZURE_INSTANCE_SIZES
+  // (Azure) in peer-pods-cm — offered as a dropdown so the machine_type annotation stays within the
+  // allowed set (§3.8). The default is always offered too, even if it isn't listed.
+  const allowedInstanceTypes = [
+    peerPodsCm?.data?.PODVM_INSTANCE_TYPES,
+    peerPodsCm?.data?.AZURE_INSTANCE_SIZES,
+  ]
+    .filter((s): s is string => Boolean(s))
+    .flatMap((s) => s.split(','))
     .map((s) => s.trim())
     .filter(Boolean);
   const instanceTypeOptions = Array.from(
@@ -683,9 +691,13 @@ const CreateSandboxWorkload: FC = () => {
                   <FormHelperText>
                     <HelperText>
                       <HelperTextItem>
-                        {t(
-                          'Must be one of the instance types allowed in peer-pods-cm (PODVM_INSTANCE_TYPES).',
-                        )}
+                        {instanceTypeOptions.length > 0
+                          ? t(
+                              'Choose one of the instances allowed in the peer pods config map (PODVM_INSTANCE_TYPES on AWS, AZURE_INSTANCE_SIZES on Azure).',
+                            )
+                          : t(
+                              'No allowed instances are defined in the peer pods config map yet — enter one your cloud supports, or add PODVM_INSTANCE_TYPES / AZURE_INSTANCE_SIZES there first.',
+                            )}
                       </HelperTextItem>
                     </HelperText>
                   </FormHelperText>
