@@ -212,6 +212,17 @@ export const VXLAN_FIREWALL_RULE_NAME = 'allow-vxlan-peerpods';
 /** Container image that provides the gcloud CLI for the in-cluster apply Job. */
 export const CLOUD_SDK_IMAGE = 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim';
 
+/**
+ * The "Fetch from AWS" flow: a CCO-minted read-only EC2 credential + a Job that resolves the worker
+ * instance's subnet / VPC / security groups for the peer pods config map. On IPI clusters those ids
+ * are tag filters in the MachineSet (not literal), so they can't be read from cluster state alone.
+ */
+export const AWS_FETCH_CRED_REQUEST = 'osc-peerpods-aws-describe';
+export const AWS_FETCH_CRED_SECRET = 'osc-peerpods-aws-describe-creds';
+export const AWS_FETCH_JOB = 'osc-peerpods-aws-describe';
+/** Official AWS CLI image — ECR Public (no Docker Hub rate limits, reachable from AWS clusters). */
+export const AWS_CLI_IMAGE = 'public.ecr.aws/aws-cli/aws-cli:latest';
+
 export const MachineSetGVK: K8sGroupVersionKind = {
   group: 'machine.openshift.io',
   version: 'v1beta1',
