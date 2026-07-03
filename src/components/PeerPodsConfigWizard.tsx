@@ -43,6 +43,7 @@ import {
 } from '../k8s/setup';
 import { toYaml } from '../utils/yaml';
 import { AZURE_DEPLOY_DOCS } from '../utils/caaDiagnostics';
+import FetchAwsNetworking from './FetchAwsNetworking';
 import './sandbox.css';
 
 interface Field {
@@ -370,10 +371,22 @@ const PeerPodsConfigWizard: FC = () => {
                     <>
                       <p className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mb">
                         {t(
-                          'Prefilled from your cluster where available. Pod VM AMI ID is added automatically by the operator after KataConfig runs — you don’t set it here (pin a custom AMI under Advanced options if needed).',
+                          'Prefilled from your cluster where available. On IPI clusters the subnet, VPC, and security groups are referenced by tag, not by id, so they can’t be read from the cluster — fetch them from AWS, or fill them in with the CLI below. Pod VM AMI ID is added automatically by the operator after KataConfig runs (pin a custom AMI under Advanced options if needed).',
                         )}
                       </p>
+                      <FetchAwsNetworking
+                        region={fieldVal('AWS_REGION')}
+                        onFetched={(r) => {
+                          setValues((prev) => ({
+                            ...prev,
+                            ...(r.subnetId ? { AWS_SUBNET_ID: r.subnetId } : {}),
+                            ...(r.vpcId ? { AWS_VPC_ID: r.vpcId } : {}),
+                            ...(r.sgIds ? { AWS_SG_IDS: r.sgIds } : {}),
+                          }));
+                        }}
+                      />
                       <ExpandableSection
+                        className="osc-openshift-console-plugin__mt"
                         toggleText={t('Fetch subnet, VPC, and security group IDs with the AWS CLI')}
                         isExpanded={cliOpen}
                         onToggle={(_e, x) => {

@@ -108,6 +108,8 @@ export type NamespaceKind = K8sResourceCommon & {
 
 /** v1 Node — status.addresses + labels for firewall source ranges; allocatable + labels for GPU detection. */
 export type NodeKind = K8sResourceCommon & {
+  /** providerID (e.g. aws:///<az>/<instance-id>) identifies the backing cloud instance. */
+  spec?: { providerID?: string };
   status?: {
     addresses?: { type: string; address: string }[];
     allocatable?: Record<string, string>;
