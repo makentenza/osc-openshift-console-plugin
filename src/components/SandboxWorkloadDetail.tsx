@@ -47,9 +47,11 @@ import { useDeploymentPods, useRuntimeClasses, usePeerPodIndex } from '../k8s/ho
 import { DeploymentGVK, DeploymentModel, PodGVK, PodModel } from '../k8s/resources';
 import type { DeploymentKind, PeerPodKind, PodKind } from '../k8s/types';
 import { buildIsolationMap, isolationDescription } from '../utils/runtime';
+import { peerPodNeedsDiagnostics } from '../utils/caaDiagnostics';
 import { podDisplayStatus, podRestartCount, statusColor } from '../utils/status';
 import { ContainerStatuses } from './ContainerStatuses';
 import { IsolationLabel } from './IsolationLabel';
+import PeerPodDiagnostics from './PeerPodDiagnostics';
 import { WorkloadMetrics } from './WorkloadMetrics';
 import './sandbox.css';
 
@@ -399,6 +401,12 @@ const SandboxWorkloadDetail: FC = () => {
                     </CardBody>
                   </Card>
                 </GridItem>
+
+                {isPod && isPeerPod && obj && peerPodNeedsDiagnostics(obj as PodKind, status) && (
+                  <GridItem span={12}>
+                    <PeerPodDiagnostics pod={obj as PodKind} />
+                  </GridItem>
+                )}
 
                 {isPod && obj && (
                   <GridItem span={12}>

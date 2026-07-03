@@ -42,6 +42,7 @@ import {
   usePeerPodsCm,
 } from '../k8s/setup';
 import { toYaml } from '../utils/yaml';
+import { AZURE_DEPLOY_DOCS } from '../utils/caaDiagnostics';
 import './sandbox.css';
 
 interface Field {
@@ -306,6 +307,28 @@ const PeerPodsConfigWizard: FC = () => {
                       <FormSelectOption value="azure" label="Azure (azure)" />
                     </FormSelect>
                   </FormGroup>
+
+                  {provider === 'azure' && (
+                    <Alert
+                      isInline
+                      variant="info"
+                      title={t('Azure peer pods need outbound connectivity')}
+                    >
+                      {t(
+                        'The peer-pod VM pulls the workload image itself, so the subnet in AZURE_SUBNET_ID must have outbound internet access — configure a NAT gateway on it. Without one, pods fail to start with an image-pull timeout. This is an Azure-infra prerequisite the plugin cannot configure.',
+                      )}{' '}
+                      <Button
+                        variant="link"
+                        isInline
+                        component="a"
+                        href={AZURE_DEPLOY_DOCS}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {t('Outbound connections (docs)')}
+                      </Button>
+                    </Alert>
+                  )}
 
                   {FIELDS[provider].map((f) => (
                     <FormGroup key={f.key} label={t(f.label)} fieldId={`pp-${f.key}`}>
