@@ -1,7 +1,16 @@
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { useMemo } from 'react';
-import { KataConfigGVK, PeerPodGVK, PodGVK, RuntimeClassGVK } from './resources';
+import {
+  CAA_DAEMONSET,
+  EventGVK,
+  KataConfigGVK,
+  OSC_NAMESPACE,
+  PeerPodGVK,
+  PodGVK,
+  RuntimeClassGVK,
+} from './resources';
 import type {
+  EventKind,
   Isolation,
   KataConfigKind,
   PeerPodKind,
@@ -103,6 +112,44 @@ export const useSandboxWorkloads = (): {
   }, [pods, sandboxRCNames, isolationMap, peerPods, rcLoaded]);
 
   return { workloads, loaded: rcLoaded && podsLoaded, isolationMap };
+};
+
+/**
+ * The osc-caa-ds (cloud-api-adaptor) pod on a given node — the one place peer-VM provisioning errors
+ * are logged, since they never become Kubernetes Events (issue #49). A peer pod's spec.nodeName is the
+ * worker it was scheduled on; the caa DaemonSet runs one pod per worker, so we match on nodeName.
+ */
+export const useCaaPodForNode = (nodeName?: string): [PodKind | undefined, boolean] => {
+  const [pods, loaded] = useK8sWatchResource<PodKind[]>({
+    groupVersionKind: PodGVK,
+    namespace: OSC_NAMESPACE,
+    isList: true,
+  });
+  return useMemo(() => {
+    if (!nodeName) return [undefined, loaded];
+    const caa = (pods ?? []).find(
+      (p) => p.spec?.nodeName === nodeName && (p.metadata?.name ?? '').startsWith(CAA_DAEMONSET),
+    );
+    return [caa, loaded];
+  }, [pods, loaded, nodeName]);
+};
+
+/** Events for a single Pod (newest first), used to surface the FailedCreatePodSandBox timeout. */
+export const usePodEvents = (namespace?: string, name?: string): [EventKind[], boolean] => {
+  const [events, loaded] = useK8sWatchResource<EventKind[]>({
+    groupVersionKind: EventGVK,
+    namespace,
+    isList: true,
+  });
+  return useMemo(() => {
+    if (!name) return [[], loaded];
+    const matched = (events ?? [])
+      .filter((e) => e.involvedObject?.kind === 'Pod' && e.involvedObject?.name === name)
+      .sort((a, b) =>
+        (b.lastTimestamp ?? b.eventTime ?? '').localeCompare(a.lastTimestamp ?? a.eventTime ?? ''),
+      );
+    return [matched, loaded];
+  }, [events, loaded, name]);
 };
 
 /** Pods belonging to a Deployment, matched via its label selector. */
