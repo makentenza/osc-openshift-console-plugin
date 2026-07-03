@@ -126,6 +126,15 @@ const TAGS_FIELD: Field = {
   help: 'Optional key=value tags applied to pod VM instances, e.g. to track cost or identify peer pods across clusters.',
 };
 
+// Pod VM root disk size — same key/default (6 GB) on all providers; surfaced so a value smaller than
+// the pod VM image OS disk (a common peer-pod start failure) can be fixed in the UI.
+const ROOT_VOLUME_FIELD: Field = {
+  key: 'ROOT_VOLUME_SIZE',
+  label: 'Pod VM root volume size (GB)',
+  placeholder: '6',
+  help: 'Root disk size for each pod VM, in GB. Default and minimum 6; increase it for large container images. A value smaller than the pod VM image OS disk makes pods fail to start.',
+};
+
 // Optional provider-specific keys, surfaced under "Advanced options".
 const ADVANCED_FIELDS: Record<string, Field[]> = {
   gcp: [
@@ -135,6 +144,7 @@ const ADVANCED_FIELDS: Record<string, Field[]> = {
       help: 'Prefilled from your cluster’s worker subnet on a custom VPC. Leave empty only on auto-mode (default) networks. On a custom VPC you must also open the peer-pods firewall ports on this subnet.',
     },
     TAGS_FIELD,
+    ROOT_VOLUME_FIELD,
   ],
   // PODVM_AMI_ID is normally operator-managed (see below); expose it only here, for the rare case of
   // pinning a custom AMI (issue #28).
@@ -145,8 +155,9 @@ const ADVANCED_FIELDS: Record<string, Field[]> = {
       help: 'Leave blank — the operator registers an AMI from your cluster credentials after KataConfig runs. Set this only to pin your own AMI.',
     },
     TAGS_FIELD,
+    ROOT_VOLUME_FIELD,
   ],
-  azure: [TAGS_FIELD],
+  azure: [TAGS_FIELD, ROOT_VOLUME_FIELD],
 };
 
 const DEFAULTS: Record<string, string> = {
@@ -238,6 +249,11 @@ const PeerPodsConfigWizard: FC = () => {
   data.PEERPODS_LIMIT_PER_NODE =
     fieldVal('PEERPODS_LIMIT_PER_NODE').trim() || DEFAULTS.PEERPODS_LIMIT_PER_NODE;
   data.ROOT_VOLUME_SIZE = fieldVal('ROOT_VOLUME_SIZE').trim() || DEFAULTS.ROOT_VOLUME_SIZE;
+  // AWS and GCP peer pods have no confidential-VM support in OSC 1.12, so they run without a TEE and
+  // the cloud-api-adaptor requires DISABLECVM="true" (AWS docs §3.2 "Creating the peer pods config
+  // map"). Azure supports Confidential VM sizes, so its DISABLECVM is managed by the confidential-
+  // containers flow, not forced here.
+  if (provider === 'aws' || provider === 'gcp') data.DISABLECVM = 'true';
   if (usePublicIp) data.USE_PUBLIC_IP = 'true';
   // The operator fills PODVM_AMI_ID in after KataConfig runs, so the user doesn't (issue #28). Seed
   // an empty key on a brand-new AWS config map so the operator populates it; never overwrite a value
