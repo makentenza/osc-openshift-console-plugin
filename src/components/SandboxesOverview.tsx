@@ -20,6 +20,8 @@ import {
   Label,
   PageSection,
   Skeleton,
+  Stack,
+  StackItem,
   Title,
 } from '@patternfly/react-core';
 import {
@@ -153,7 +155,7 @@ const GettingStarted: FC = () => {
 
 const SandboxesOverview: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
-  const [kataConfig, kcLoaded] = useKataConfig();
+  const [kataConfig, kcLoaded, kcError] = useKataConfig();
   const [runtimeClasses] = useRuntimeClasses();
   const { workloads, loaded } = useSandboxWorkloads();
   const [caa] = useK8sWatchResource<DaemonSetKind>({
@@ -271,16 +273,52 @@ const SandboxesOverview: FC = () => {
             <Card>
               <CardTitle>{t('Installation status')}</CardTitle>
               <CardBody>
-                {!kcLoaded ? (
+                {!kcLoaded && !kcError ? (
                   <Flex direction={{ default: 'column' }} gap={{ default: 'gapSm' }}>
                     <Skeleton width="60%" />
                     <Skeleton width="80%" />
                     <Skeleton width="50%" />
                   </Flex>
                 ) : !kataConfig ? (
-                  <Label color="red" icon={<ExclamationTriangleIcon />}>
-                    {t('KataConfig not found — OpenShift sandboxed containers is not installed')}
-                  </Label>
+                  // No KataConfig object. Every Sandboxes route is gated by the OSC_KATACONFIG flag
+                  // (KataConfig CRD present), so the operator is already installed whenever this
+                  // renders: an empty list means "installed but not configured" (the issue #54 case),
+                  // and a load error means the CR couldn't be read (permissions / transient) — not a
+                  // missing operator. Never claim "not installed" for either.
+                  <Stack hasGutter>
+                    {kcError ? (
+                      <>
+                        <StackItem>
+                          <Label color="orange" icon={<ExclamationTriangleIcon />}>
+                            {t('Could not read KataConfig')}
+                          </Label>
+                        </StackItem>
+                        <StackItem className="osc-openshift-console-plugin__muted">
+                          {t(
+                            'You may not have permission to view it, or the API is temporarily unavailable.',
+                          )}
+                        </StackItem>
+                      </>
+                    ) : (
+                      <>
+                        <StackItem>
+                          <Label color="orange" icon={<ExclamationTriangleIcon />}>
+                            {t('Installed, but not configured')}
+                          </Label>
+                        </StackItem>
+                        <StackItem>
+                          {t(
+                            'The operator is installed but no KataConfig exists yet, so the sandboxed runtime is not available. Finish setup to install it.',
+                          )}
+                        </StackItem>
+                        <StackItem>
+                          <Link to="/sandboxes/setup">
+                            <Button variant="primary">{t('Go to Setup')}</Button>
+                          </Link>
+                        </StackItem>
+                      </>
+                    )}
+                  </Stack>
                 ) : (
                   <DescriptionList isHorizontal>
                     <DescriptionListGroup>

@@ -29,12 +29,21 @@ export const useRuntimeClasses = (): [RuntimeClassKind[], boolean] => {
   return [data ?? [], loaded];
 };
 
-export const useKataConfig = (): [KataConfigKind | undefined, boolean] => {
-  const [data, loaded] = useK8sWatchResource<KataConfigKind[]>({
+/**
+ * The cluster's KataConfig (there is only ever one). Returns `[kataConfig, loaded, loadError]`.
+ *
+ * loadError matters to callers. The plugin's pages are gated by the OSC_KATACONFIG flag (KataConfig
+ * CRD present), so the operator is always installed when they render: an empty list means "installed
+ * but not configured", while a loadError means the CR could not be read (missing permission, or a
+ * transient API error) — never a missing operator. Callers use it to avoid a wrong-state message and
+ * to break out of the loading skeleton when the watch errors (issue #54).
+ */
+export const useKataConfig = (): [KataConfigKind | undefined, boolean, unknown] => {
+  const [data, loaded, loadError] = useK8sWatchResource<KataConfigKind[]>({
     groupVersionKind: KataConfigGVK,
     isList: true,
   });
-  return [data?.[0], loaded];
+  return [data?.[0], loaded, loadError];
 };
 
 /** Index PeerPods by `${namespace}/${ownerPodName}` so we can map a Pod to its cloud VM. */

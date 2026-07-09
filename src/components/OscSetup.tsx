@@ -147,6 +147,8 @@ const OscSetup: FC = () => {
   const steps: Step[] = [
     {
       title: t('OpenShift sandboxed containers operator'),
+      // Every Sandboxes route is gated by the OSC_KATACONFIG flag (KataConfig CRD present), so the
+      // operator is installed whenever this page renders — this step is always done (issue #54).
       status: 'done',
       detail: t('Installed — the KataConfig CRD is present on this cluster.'),
     },
