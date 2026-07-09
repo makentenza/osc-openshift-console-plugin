@@ -24,6 +24,12 @@ import { toGcpNetworkPath } from '../utils/gcp';
 export type InfrastructureKind = K8sResourceCommon & {
   status?: {
     platform?: string;
+    /**
+     * 'External' on a HyperShift / hosted-control-plane cluster (no in-cluster MachineConfig
+     * Operator), 'HighlyAvailable' or 'SingleReplica' on a standalone cluster. Used to pick the
+     * OSC deployment mode (DaemonSet vs MachineConfig) automatically.
+     */
+    controlPlaneTopology?: string;
     platformStatus?: {
       gcp?: { projectID?: string; region?: string };
       aws?: { region?: string };
