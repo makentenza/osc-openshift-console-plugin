@@ -20,10 +20,12 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useCaaPodForNode, usePodEvents } from '../k8s/hooks';
 import { OSC_NAMESPACE, PodGVK } from '../k8s/resources';
+import { useClusterPlatform } from '../k8s/setup';
 import type { PodKind } from '../k8s/types';
 import {
   caaContainerName,
-  COMMON_CAA_CAUSES,
+  cloudProviderFromPlatform,
+  commonCaaCauses,
   diagnoseCaaLog,
   podWaitingText,
 } from '../utils/caaDiagnostics';
@@ -48,6 +50,9 @@ const PeerPodDiagnostics: FC<{ pod: PodKind }> = ({ pod }) => {
 
   const [caaPod] = useCaaPodForNode(nodeName);
   const [events] = usePodEvents(ns, name);
+  // The cloud the cluster runs on, so the cause/fix text names this cloud's peer-pods-cm keys and
+  // egress prerequisite — never another cloud's (issue #56).
+  const provider = cloudProviderFromPlatform(useClusterPlatform());
 
   const sandboxEvent = useMemo(
     () =>
@@ -91,8 +96,11 @@ const PeerPodDiagnostics: FC<{ pod: PodKind }> = ({ pod }) => {
   // signature can surface in any of the three.
   const dx = useMemo(
     () =>
-      diagnoseCaaLog([podWaitingText(pod), sandboxEvent?.message, log].filter(Boolean).join('\n')),
-    [pod, sandboxEvent, log],
+      diagnoseCaaLog(
+        [podWaitingText(pod), sandboxEvent?.message, log].filter(Boolean).join('\n'),
+        provider,
+      ),
+    [pod, sandboxEvent, log, provider],
   );
 
   // Only the lines that mention this pod or an error, so we don't dump 200 noisy reconcile lines.
@@ -155,7 +163,7 @@ const PeerPodDiagnostics: FC<{ pod: PodKind }> = ({ pod }) => {
                 <>
                   <p className="osc-openshift-console-plugin__mb">{t('Common causes to check:')}</p>
                   <List>
-                    {COMMON_CAA_CAUSES.map((c) => (
+                    {commonCaaCauses(provider).map((c) => (
                       <ListItem key={c}>{c}</ListItem>
                     ))}
                   </List>
