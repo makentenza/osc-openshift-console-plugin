@@ -1,6 +1,7 @@
 import {
   DocumentTitle,
   k8sCreate,
+  k8sGet,
   k8sPatch,
   ListPageHeader,
   useK8sWatchResource,
@@ -35,12 +36,36 @@ import type { FC } from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { KATA_NODE_LABEL, KataConfigModel, NodeGVK, NodeModel } from '../k8s/resources';
+import {
+  ConfigMapModel,
+  InfrastructureGVK,
+  KATA_NODE_LABEL,
+  KataConfigModel,
+  NodeGVK,
+  NodeModel,
+} from '../k8s/resources';
+import type { InfrastructureKind } from '../k8s/setup';
 import type { NodeKind } from '../k8s/types';
 import { toYaml } from '../utils/yaml';
 import './sandbox.css';
 
 const WORKER_LABEL = 'node-role.kubernetes.io/worker';
+const FG_CONFIGMAP_NAME = 'osc-feature-gates';
+const OPERATOR_NAMESPACE = 'openshift-sandboxed-containers-operator';
+
+type DeployMode = 'Auto' | 'DaemonSet' | 'MachineConfig';
+
+// UI choice -> value written to osc-feature-gates .data.deploymentMode.
+// 'Auto' uses DaemonSetFallback: the operator installs via DaemonSet only when the MachineConfig
+// Operator is absent (hosted/HCP clusters) and via MachineConfig otherwise (standalone) — so it is
+// correct on both topologies with zero user input.
+const DEPLOYMENT_MODE_VALUE: Record<DeployMode, string> = {
+  Auto: 'DaemonSetFallback',
+  DaemonSet: 'DaemonSet',
+  MachineConfig: 'MachineConfig',
+};
+
+type ConfigMapKind = K8sResourceCommon & { data?: Record<string, string> };
 
 const KataConfigWizard: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
@@ -52,6 +77,7 @@ const KataConfigWizard: FC = () => {
   const [logLevel, setLogLevel] = useState('info');
   const [nodeMode, setNodeMode] = useState<'all' | 'specific'>('all');
   const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
+  const [deployMode, setDeployMode] = useState<DeployMode>('Auto');
   const [poolLabelKey, setPoolLabelKey] = useState('');
   const [poolLabelValue, setPoolLabelValue] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -62,6 +88,16 @@ const KataConfigWizard: FC = () => {
   const workerNodes = (nodes ?? []).filter((n) =>
     Object.keys(n.metadata?.labels ?? {}).includes(WORKER_LABEL),
   );
+
+  // Detect a hosted control plane (HyperShift/HCP): controlPlaneTopology === 'External' means there
+  // is no in-cluster MachineConfig Operator, so kata must install via DaemonSet (no node reboots).
+  const [infra] = useK8sWatchResource<InfrastructureKind>({
+    groupVersionKind: InfrastructureGVK,
+    name: 'cluster',
+  });
+  const topology = infra?.status?.controlPlaneTopology;
+  const isHosted = topology === undefined ? undefined : topology === 'External';
+
   // A hand-picked node set is targeted by labeling those nodes and selecting on that label.
   const useSpecificNodes = nodeMode === 'specific' && selectedNodes.length > 0;
 
@@ -70,6 +106,18 @@ const KataConfigWizard: FC = () => {
       checked ? Array.from(new Set([...prev, node])) : prev.filter((n) => n !== node),
     );
   };
+
+  const deploymentModeValue = DEPLOYMENT_MODE_VALUE[deployMode];
+  // What 'Auto' resolves to on this cluster (drives the reboot warning). undefined while detecting.
+  const resolvedMode: 'DaemonSet' | 'MachineConfig' | undefined =
+    deployMode === 'Auto'
+      ? isHosted === undefined
+        ? undefined
+        : isHosted
+          ? 'DaemonSet'
+          : 'MachineConfig'
+      : deployMode;
+  const willReboot = resolvedMode === undefined ? undefined : resolvedMode === 'MachineConfig';
 
   const spec: Record<string, unknown> = { enablePeerPods, checkNodeEligibility, logLevel };
   if (useSpecificNodes) {
@@ -80,17 +128,48 @@ const KataConfigWizard: FC = () => {
     };
   }
 
-  const manifest: K8sResourceCommon & Record<string, unknown> = {
+  const kataConfigManifest: K8sResourceCommon & Record<string, unknown> = {
     apiVersion: 'kataconfiguration.openshift.io/v1',
     kind: 'KataConfig',
     metadata: { name: name.trim() },
     spec,
   };
 
+  const featureGateManifest: ConfigMapKind = {
+    apiVersion: 'v1',
+    kind: 'ConfigMap',
+    metadata: { name: FG_CONFIGMAP_NAME, namespace: OPERATOR_NAMESPACE },
+    data: { deploymentMode: deploymentModeValue },
+  };
+
+  // Create or update osc-feature-gates so the operator picks the deployment mode. It must exist
+  // before the KataConfig, because the mode is read at the start of the KataConfig reconcile.
+  const ensureFeatureGate = async () => {
+    const desired = { deploymentMode: deploymentModeValue };
+    try {
+      const existing = await k8sGet<ConfigMapKind>({
+        model: ConfigMapModel,
+        name: FG_CONFIGMAP_NAME,
+        ns: OPERATOR_NAMESPACE,
+      });
+      // Merge so we preserve any other feature gates already set (confidential, layeredImageDeployment).
+      await k8sPatch({
+        model: ConfigMapModel,
+        resource: existing,
+        data: [{ op: 'add', path: '/data', value: { ...(existing.data ?? {}), ...desired } }],
+      });
+    } catch {
+      // Not present yet — create it. A genuine (non-NotFound) failure resurfaces on create.
+      await k8sCreate({ model: ConfigMapModel, data: featureGateManifest });
+    }
+  };
+
   const create = async () => {
     setBusy(true);
     setError(undefined);
     try {
+      // Deployment mode first, so the KataConfig reconcile sees it immediately.
+      await ensureFeatureGate();
       // Label the hand-picked nodes so KataConfig's pool selector matches exactly them.
       if (useSpecificNodes) {
         await Promise.all(
@@ -103,7 +182,7 @@ const KataConfigWizard: FC = () => {
           ),
         );
       }
-      await k8sCreate({ model: KataConfigModel, data: manifest });
+      await k8sCreate({ model: KataConfigModel, data: kataConfigManifest });
       void navigate('/sandboxes');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -112,21 +191,47 @@ const KataConfigWizard: FC = () => {
     }
   };
 
+  const previewYaml = [featureGateManifest, kataConfigManifest].map(toYaml).join('\n---\n');
+
   return (
     <>
       <DocumentTitle>{t('Create KataConfig')}</DocumentTitle>
       <ListPageHeader title={t('Create KataConfig')} />
       <PageSection>
-        <Alert
-          variant="warning"
-          isInline
-          title={t('Creating a KataConfig reboots your worker nodes')}
-          className="osc-openshift-console-plugin__mb"
-        >
-          {t(
-            'Installing the Kata runtime drains and reboots each eligible node — this can take from 10 to 60+ minutes. Track progress on the Sandboxes overview.',
-          )}
-        </Alert>
+        {willReboot === false ? (
+          <Alert
+            variant="info"
+            isInline
+            title={t('Installing Kata will not reboot your nodes')}
+            className="osc-openshift-console-plugin__mb"
+          >
+            {t(
+              'DaemonSet mode installs the Kata runtime without draining or rebooting nodes — the right mode for hosted (HyperShift/HCP) clusters that have no MachineConfig Operator. Track progress on the Sandboxes overview.',
+            )}
+          </Alert>
+        ) : willReboot === true ? (
+          <Alert
+            variant="warning"
+            isInline
+            title={t('Creating a KataConfig reboots your worker nodes')}
+            className="osc-openshift-console-plugin__mb"
+          >
+            {t(
+              'MachineConfig mode drains and reboots each eligible node — this can take from 10 to 60+ minutes. Track progress on the Sandboxes overview.',
+            )}
+          </Alert>
+        ) : (
+          <Alert
+            variant="info"
+            isInline
+            title={t('Detecting cluster topology…')}
+            className="osc-openshift-console-plugin__mb"
+          >
+            {t(
+              'Determining whether this is a hosted or standalone cluster to pick the install method.',
+            )}
+          </Alert>
+        )}
         <Grid hasGutter>
           <GridItem md={6}>
             <Card>
@@ -158,6 +263,58 @@ const KataConfigWizard: FC = () => {
                             'Required on clouds without nested virtualization (e.g. most GCP/AWS/Azure). Create the peer-pods-cm before this KataConfig. It installs both runtime classes — kata-remote (peer pods) and kata (on-node) — so one cluster can run either, chosen per workload by its runtimeClassName.',
                           )}
                         </HelperTextItem>
+                      </HelperText>
+                    </FormHelperText>
+                  </FormGroup>
+
+                  <FormGroup label={t('Deployment mode')} fieldId="kc-deploymode">
+                    <Radio
+                      id="kc-mode-auto"
+                      name="kc-deploymode"
+                      label={t('Auto-detect (recommended)')}
+                      isChecked={deployMode === 'Auto'}
+                      onChange={() => {
+                        setDeployMode('Auto');
+                      }}
+                    />
+                    <Radio
+                      id="kc-mode-daemonset"
+                      name="kc-deploymode"
+                      label={t('DaemonSet — install without rebooting nodes')}
+                      isChecked={deployMode === 'DaemonSet'}
+                      onChange={() => {
+                        setDeployMode('DaemonSet');
+                      }}
+                    />
+                    <Radio
+                      id="kc-mode-machineconfig"
+                      name="kc-deploymode"
+                      label={t('MachineConfig — reboots nodes (standalone clusters)')}
+                      isChecked={deployMode === 'MachineConfig'}
+                      onChange={() => {
+                        setDeployMode('MachineConfig');
+                      }}
+                    />
+                    <FormHelperText>
+                      <HelperText>
+                        <HelperTextItem>
+                          {t(
+                            'Sets deploymentMode in the {{cm}} ConfigMap (created for you). Auto uses DaemonSetFallback: DaemonSet where there is no MachineConfig Operator (hosted clusters), MachineConfig otherwise.',
+                            { cm: FG_CONFIGMAP_NAME },
+                          )}
+                        </HelperTextItem>
+                        {isHosted !== undefined && (
+                          <HelperTextItem variant={isHosted ? 'success' : 'default'}>
+                            {isHosted
+                              ? t(
+                                  'Detected: hosted control plane (no MachineConfig Operator). Auto will install via DaemonSet — no reboots.',
+                                )
+                              : t(
+                                  'Detected: standalone cluster ({{topology}}). Auto will install via MachineConfig.',
+                                  { topology },
+                                )}
+                          </HelperTextItem>
+                        )}
                       </HelperText>
                     </FormHelperText>
                   </FormGroup>
@@ -210,7 +367,7 @@ const KataConfigWizard: FC = () => {
                         <HelperText>
                           <HelperTextItem>
                             {t(
-                              'The runtime installs only on the nodes you pick — each is labeled {{label}}=true and reboots once. Other workers are untouched.',
+                              'The runtime installs only on the nodes you pick — each is labeled {{label}}=true. Other workers are untouched.',
                               { label: KATA_NODE_LABEL },
                             )}
                           </HelperTextItem>
@@ -327,7 +484,7 @@ const KataConfigWizard: FC = () => {
               <CardTitle>{t('Manifest preview')}</CardTitle>
               <CardBody>
                 <CodeBlock>
-                  <CodeBlockCode>{toYaml(manifest)}</CodeBlockCode>
+                  <CodeBlockCode>{previewYaml}</CodeBlockCode>
                 </CodeBlock>
               </CardBody>
             </Card>
