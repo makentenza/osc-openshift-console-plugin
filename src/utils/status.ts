@@ -54,6 +54,8 @@ export interface KataReadiness {
   failedNodes: number;
   /** Uninstall is blocked because pods still use the kata-remote runtime class (§8.1). */
   blockedByExistingPods: boolean;
+  /** The InProgress condition's reason, when the operator gave one — display detail only. */
+  reason?: string;
 }
 
 /**
@@ -84,7 +86,13 @@ export const kataConfigReadiness = (kc?: KataConfigKind): KataReadiness => {
   const blockedByExistingPods = inProgressCond?.reason === 'BlockedByExistingKataPods';
   const runtimeClasses = kc.status?.runtimeClasses?.length ?? 0;
 
-  const base = { readyNodes, totalNodes, failedNodes, blockedByExistingPods };
+  const base = {
+    readyNodes,
+    totalNodes,
+    failedNodes,
+    blockedByExistingPods,
+    reason: inProgressCond?.reason,
+  };
   // Still churning: keep it "installing" even if a node transiently shows up as failed.
   if (inProgress === 'True') return { phase: 'installing', ready: false, ...base };
   if (failedNodes > 0) return { phase: 'failed', ready: false, ...base };

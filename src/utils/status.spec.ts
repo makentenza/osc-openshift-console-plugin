@@ -34,6 +34,18 @@ describe('kataConfigReadiness', () => {
     expect(r.ready).toBe(false);
   });
 
+  it('carries the InProgress reason through for display', () => {
+    const r = kataConfigReadiness(
+      kc({ conditions: [{ type: 'InProgress', status: 'True', reason: 'WaitingForNodes' }] }),
+    );
+    expect(r.reason).toBe('WaitingForNodes');
+  });
+
+  it('leaves the reason undefined when the operator gave none', () => {
+    expect(kataConfigReadiness(kc({})).reason).toBeUndefined();
+    expect(kataConfigReadiness(undefined).reason).toBeUndefined();
+  });
+
   it('is installing when settled but not every node is ready yet', () => {
     const r = kataConfigReadiness(
       kc({

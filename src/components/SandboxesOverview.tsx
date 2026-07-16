@@ -28,6 +28,7 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   ExclamationTriangleIcon,
+  InProgressIcon,
 } from '@patternfly/react-icons';
 import type { FC } from 'react';
 import { useMemo } from 'react';
@@ -37,7 +38,7 @@ import { useKataConfig, useRuntimeClasses, useSandboxWorkloads } from '../k8s/ho
 import { CAA_DAEMONSET, DaemonSetGVK, OSC_NAMESPACE } from '../k8s/resources';
 import type { DaemonSetKind } from '../k8s/types';
 import { isSandboxRuntimeClass, isolationDescription, isolationForHandler } from '../utils/runtime';
-import { statusCategory } from '../utils/status';
+import { kataConfigReadiness, statusCategory } from '../utils/status';
 import { IsolationLabel } from './IsolationLabel';
 import RecentEventsCard from './RecentEventsCard';
 import './sandbox.css';
@@ -183,8 +184,11 @@ const SandboxesOverview: FC = () => {
     return { healthy, warning, error };
   }, [workloads]);
 
-  const inProgress = kataConfig?.status?.conditions?.find((c) => c.type === 'InProgress');
-  const installing = inProgress?.status === 'True';
+  // Creating a KataConfig only *starts* the rollout, and the object exists with an empty status
+  // before the operator touches it. Reading the InProgress condition directly called that "Installed"
+  // the moment the wizard finished — the one state it certainly isn't (issue #64). Derive the phase
+  // the same way the setup checklist does, which treats a nascent status as installing (issue #6).
+  const kata = kataConfigReadiness(kataConfig);
   const nodes = kataConfig?.status?.kataNodes;
   const failedNodes = nodes?.failedToInstall ?? [];
   const peerPodsEnabled = kataConfig?.spec?.enablePeerPods;
@@ -324,10 +328,14 @@ const SandboxesOverview: FC = () => {
                     <DescriptionListGroup>
                       <DescriptionListTerm>{t('State')}</DescriptionListTerm>
                       <DescriptionListDescription>
-                        {installing ? (
-                          <Label color="orange">
+                        {kata.phase === 'installing' ? (
+                          <Label color="orange" icon={<InProgressIcon />}>
                             {t('Installing')}
-                            {inProgress?.reason ? ` (${inProgress.reason})` : ''}
+                            {kata.reason ? ` (${kata.reason})` : ''}
+                          </Label>
+                        ) : kata.phase === 'failed' ? (
+                          <Label color="red" icon={<ExclamationCircleIcon />}>
+                            {t('Install failed')}
                           </Label>
                         ) : (
                           <Label color="green" icon={<CheckCircleIcon />}>
@@ -336,6 +344,15 @@ const SandboxesOverview: FC = () => {
                         )}
                       </DescriptionListDescription>
                     </DescriptionListGroup>
+                    {kata.phase === 'installing' && (
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>{t('Progress')}</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          {t('The runtime is not usable until every node reports ready.')}{' '}
+                          <Link to="/sandboxes/setup">{t('Track it on Setup')}</Link>
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                    )}
                     <DescriptionListGroup>
                       <DescriptionListTerm>{t('Kata nodes ready')}</DescriptionListTerm>
                       <DescriptionListDescription>
