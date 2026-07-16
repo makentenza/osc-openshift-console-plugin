@@ -42,6 +42,7 @@ import {
   usePeerPodsCm,
 } from '../k8s/setup';
 import { toYaml } from '../utils/yaml';
+import { AWS_DESCRIBE_CLI } from '../utils/awsCli';
 import { normalizeCsvList } from '../utils/csv';
 import { parsePeerPodsBool } from '../utils/peerPods';
 import { AZURE_DEPLOY_DOCS } from '../utils/caaDiagnostics';
@@ -175,21 +176,6 @@ const DEFAULTS: Record<string, string> = {
   ROOT_VOLUME_SIZE: '6',
   GCP_MACHINE_TYPE: 'e2-medium',
 };
-
-// The Red Hat "Creating the peer pods config map" procedure for reading AWS values off a worker
-// instance — shown as a fallback for the IDs the cluster doesn't expose for prefill (issue #28).
-const AWS_DESCRIBE_CLI = [
-  `INSTANCE_ID=$(oc get nodes -l node-role.kubernetes.io/worker \\`,
-  `  -o jsonpath='{.items[0].spec.providerID}' | sed 's#[^ ]*/##g')`,
-  `AWS_REGION=$(oc get infrastructure/cluster -o jsonpath='{.status.platformStatus.aws.region}')`,
-  `aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION" \\`,
-  `  --query 'Reservations[*].Instances[*].SubnetId' --output text   # AWS_SUBNET_ID`,
-  `aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION" \\`,
-  `  --query 'Reservations[*].Instances[*].VpcId' --output text      # AWS_VPC_ID`,
-  `aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION" \\`,
-  `  --query 'Reservations[*].Instances[*].SecurityGroups[*].GroupId' --output json \\`,
-  `  | jq -r '.[][]' | paste -sd ","                                 # AWS_SG_IDS`,
-].join('\n');
 
 const PeerPodsConfigWizard: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');

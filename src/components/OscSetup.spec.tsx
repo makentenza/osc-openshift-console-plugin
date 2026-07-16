@@ -91,13 +91,14 @@ const setup = (opts: {
   featureGatesLoading?: boolean;
   kataConfig?: WatchResult;
   peerPodsCm?: WatchResult;
+  cloudProvider?: string;
 }): void => {
   watches.clear();
   // peer-pods-cm configured unless a test says otherwise, so the install-copy cases below are never
   // entangled with the ordering advice.
   watches.set(
     'ConfigMap/peer-pods-cm',
-    opts.peerPodsCm ?? [{ data: { CLOUD_PROVIDER: 'azure' } }, true, null],
+    opts.peerPodsCm ?? [{ data: { CLOUD_PROVIDER: opts.cloudProvider ?? 'azure' } }, true, null],
   );
   watches.set(
     'Infrastructure',
@@ -117,6 +118,30 @@ const setup = (opts: {
 
 /** Copy rendered anywhere on the checklist. Text-node matching, so ancestors don't double-count. */
 const copy = (pattern: RegExp): HTMLElement[] => screen.queryAllByText(pattern);
+
+// Only GCP has the in-cluster "Apply" flow, so only GCP should hear about it (issue #63).
+describe('OscSetup — "mark firewall as done" hint', () => {
+  it('does not mention GCP on an AWS cluster', () => {
+    setup({ topology: 'External', cloudProvider: 'aws' });
+    expect(copy(/GCP/)).toHaveLength(0);
+    expect(copy(/Apply in cluster/)).toHaveLength(0);
+    expect(
+      copy(
+        /Tick this once you have opened the firewall ports in your cloud — it turns the step green\./,
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it('does not mention GCP on an Azure cluster', () => {
+    setup({ topology: 'External', cloudProvider: 'azure' });
+    expect(copy(/GCP/)).toHaveLength(0);
+  });
+
+  it('still points GCP users at the in-cluster apply action', () => {
+    setup({ topology: 'HighlyAvailable', cloudProvider: 'gcp' });
+    expect(copy(/The "Apply in cluster" action above ticks it for you\./)).not.toHaveLength(0);
+  });
+});
 
 describe('OscSetup — KataConfig step install copy', () => {
   describe('on a hosted (HCP) cluster, where the install uses a DaemonSet', () => {
