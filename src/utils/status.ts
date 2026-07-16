@@ -54,7 +54,11 @@ export interface KataReadiness {
   failedNodes: number;
   /** Uninstall is blocked because pods still use the kata-remote runtime class (§8.1). */
   blockedByExistingPods: boolean;
-  /** The InProgress condition's reason, when the operator gave one — display detail only. */
+  /**
+   * Why the operator is working, when it says — display detail only, and only while it genuinely is
+   * working. A settled condition keeps its last reason ('Installed'), which paired with a phase that
+   * is still `installing` reads as the self-contradicting "Installing (Installed)".
+   */
   reason?: string;
 }
 
@@ -91,7 +95,7 @@ export const kataConfigReadiness = (kc?: KataConfigKind): KataReadiness => {
     totalNodes,
     failedNodes,
     blockedByExistingPods,
-    reason: inProgressCond?.reason,
+    reason: inProgress === 'True' ? inProgressCond?.reason : undefined,
   };
   // Still churning: keep it "installing" even if a node transiently shows up as failed.
   if (inProgress === 'True') return { phase: 'installing', ready: false, ...base };

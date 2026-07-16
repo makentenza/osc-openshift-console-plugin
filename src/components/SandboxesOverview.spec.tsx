@@ -129,6 +129,37 @@ describe('SandboxesOverview — installation state', () => {
     expect(copy(/worker-2/)).not.toHaveLength(0);
   });
 
+  // A blocked uninstall settles InProgress to False, so the phase alone reads as an install still
+  // running. The checklist has always called this out; the overview must not describe a deletion as
+  // an installation.
+  it('reports a blocked uninstall rather than an install in progress', () => {
+    mount(
+      kataConfig({
+        conditions: [{ type: 'InProgress', status: 'False', reason: 'BlockedByExistingKataPods' }],
+        kataNodes: { nodeCount: 2, readyNodeCount: 0 },
+      }),
+    );
+
+    expect(copy(/^Uninstall blocked$/)).not.toHaveLength(0);
+    expect(copy(/^Installing$/)).toHaveLength(0);
+    expect(copy(/^Installed$/)).toHaveLength(0);
+    expect(copy(/Existing pods still use the kata-remote runtime class/)).not.toHaveLength(0);
+  });
+
+  // A settled condition keeps its last reason; showing it next to "Installing" contradicts itself.
+  it('never renders "Installing (Installed)"', () => {
+    mount(
+      kataConfig({
+        conditions: [{ type: 'InProgress', status: 'False', reason: 'Installed' }],
+        kataNodes: { nodeCount: 3, readyNodeCount: 1 },
+        runtimeClasses: [],
+      }),
+    );
+
+    expect(copy(/^Installing$/)).not.toHaveLength(0);
+    expect(copy(/Installing \(/)).toHaveLength(0);
+  });
+
   it('still reports "Installed, but not configured" when no KataConfig exists', () => {
     mount([[], true, null]);
 

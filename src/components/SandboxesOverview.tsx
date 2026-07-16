@@ -328,7 +328,14 @@ const SandboxesOverview: FC = () => {
                     <DescriptionListGroup>
                       <DescriptionListTerm>{t('State')}</DescriptionListTerm>
                       <DescriptionListDescription>
-                        {kata.phase === 'installing' ? (
+                        {/* A blocked uninstall settles InProgress to False, so the phase ladder alone
+                            reads it as an install still running. Check it first, as the checklist
+                            does, rather than describe a deletion as an installation. */}
+                        {kata.blockedByExistingPods ? (
+                          <Label color="orange" icon={<ExclamationTriangleIcon />}>
+                            {t('Uninstall blocked')}
+                          </Label>
+                        ) : kata.phase === 'installing' ? (
                           <Label color="orange" icon={<InProgressIcon />}>
                             {t('Installing')}
                             {kata.reason ? ` (${kata.reason})` : ''}
@@ -344,14 +351,26 @@ const SandboxesOverview: FC = () => {
                         )}
                       </DescriptionListDescription>
                     </DescriptionListGroup>
-                    {kata.phase === 'installing' && (
+                    {kata.blockedByExistingPods ? (
                       <DescriptionListGroup>
-                        <DescriptionListTerm>{t('Progress')}</DescriptionListTerm>
+                        <DescriptionListTerm>{t('Blocked by')}</DescriptionListTerm>
                         <DescriptionListDescription>
-                          {t('The runtime is not usable until every node reports ready.')}{' '}
-                          <Link to="/sandboxes/setup">{t('Track it on Setup')}</Link>
+                          {t(
+                            'Existing pods still use the kata-remote runtime class, which blocks deleting this KataConfig. Delete those workloads first, then retry.',
+                          )}{' '}
+                          <Link to="/sandboxes/workloads">{t('View sandboxed workloads')}</Link>
                         </DescriptionListDescription>
                       </DescriptionListGroup>
+                    ) : (
+                      kata.phase === 'installing' && (
+                        <DescriptionListGroup>
+                          <DescriptionListTerm>{t('Progress')}</DescriptionListTerm>
+                          <DescriptionListDescription>
+                            {t('The runtime is not usable until every node reports ready.')}{' '}
+                            <Link to="/sandboxes/setup">{t('Track it on Setup')}</Link>
+                          </DescriptionListDescription>
+                        </DescriptionListGroup>
+                      )
                     )}
                     <DescriptionListGroup>
                       <DescriptionListTerm>{t('Kata nodes ready')}</DescriptionListTerm>
