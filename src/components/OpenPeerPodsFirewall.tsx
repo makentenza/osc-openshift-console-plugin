@@ -455,6 +455,15 @@ const OpenPeerPodsFirewall: FC = () => {
             </ExpandableSection>
           </>
         )}
+        {fetchedSgIds && (
+          <Alert
+            variant="success"
+            isInline
+            isPlain
+            className="osc-openshift-console-plugin__mt"
+            title={t('Filled in the security group from your worker instance.')}
+          />
+        )}
         {placeholders.length > 0 && (
           <Alert
             variant="warning"
@@ -462,15 +471,23 @@ const OpenPeerPodsFirewall: FC = () => {
             isPlain
             className="osc-openshift-console-plugin__mt"
             title={
-              provider === 'aws' && !awsSg
+              provider !== 'aws' || awsSg
                 ? t(
-                    'Replace the placeholder value(s) before running: {{placeholders}}. Use Fetch from AWS above to read the security group off a worker instance — your cluster does not store it.',
-                    { placeholders: placeholders.join(', ') },
-                  )
-                : t(
                     'Replace the placeholder value(s) before running: {{placeholders}}. Find them in your peer pods config map or cloud console.',
                     { placeholders: placeholders.join(', ') },
                   )
+                : // Manual-mode CCO (STS) can't mint a credential, so Fetch from AWS is disabled —
+                  // the usual case on AWS HCP/ROSA. Point at the CLI it leaves as the way through
+                  // rather than at a button the user cannot press.
+                  ccoManual
+                  ? t(
+                      'Replace the placeholder value(s) before running: {{placeholders}}. Your cluster uses manually-managed credentials, so the plugin cannot read the security group for you — use the AWS CLI above to find it.',
+                      { placeholders: placeholders.join(', ') },
+                    )
+                  : t(
+                      'Replace the placeholder value(s) before running: {{placeholders}}. Use Fetch from AWS above to read the security group off a worker instance — your cluster does not store it.',
+                      { placeholders: placeholders.join(', ') },
+                    )
             }
           />
         )}
