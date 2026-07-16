@@ -23,8 +23,11 @@ export interface FirewallParams {
   awsSecurityGroupId?: string;
   /** Azure resource group that owns the network security group. */
   azureResourceGroup?: string;
-  /** Azure network security group name — from peer-pods-cm AZURE_NSG_ID if present. */
-  azureNsgName?: string;
+  /**
+   * Azure network security group, as either a bare name or a full ARM resource id — peer-pods-cm
+   * stores AZURE_NSG_ID as an id, which is not what `az … --nsg-name` takes (issue #57).
+   */
+  azureNsg?: string;
 }
 
 /** A placeholder token the user must replace; rendered verbatim and reported via `placeholders`. */
@@ -65,12 +68,35 @@ const awsCommand = (p: FirewallParams): FirewallCommand => {
 };
 
 /**
+ * Split an NSG reference into the short name and the resource group that owns it. Accepts a bare
+ * name or a full ARM resource id
+ * (/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/networkSecurityGroups/<name>),
+ * which is the form peer-pods-cm's AZURE_NSG_ID takes. `az network nsg rule create` wants the two
+ * split apart: an id in `--nsg-name` makes the CLI look up an NSG literally called "subscriptions".
+ */
+const parseNsg = (value?: string): { name?: string; resourceGroup?: string } => {
+  const v = value?.trim();
+  if (!v) return {};
+  if (!v.includes('/')) return { name: v };
+  const segments = v.split('/').filter(Boolean);
+  const name = segments[segments.length - 1];
+  const rgIndex = segments.findIndex((s) => s.toLowerCase() === 'resourcegroups');
+  // Guard against a malformed id whose "resource group" is also its last segment (i.e. the name).
+  const resourceGroup =
+    rgIndex >= 0 && rgIndex + 1 < segments.length - 1 ? segments[rgIndex + 1] : undefined;
+  return { name, resourceGroup };
+};
+
+/**
  * Azure: one `az network nsg rule create` opening both ports (priority 1000) on the cluster's
  * network security group within its resource group.
  */
 const azureCommand = (p: FirewallParams): FirewallCommand => {
-  const rg = p.azureResourceGroup || PH.azureRg;
-  const nsg = p.azureNsgName || PH.azureNsg;
+  const { name: nsgName, resourceGroup: nsgResourceGroup } = parseNsg(p.azureNsg);
+  // When the NSG came in as a resource id it names its own resource group — prefer that over the
+  // cluster's network resource group, which does not always own the NSG.
+  const rg = nsgResourceGroup || p.azureResourceGroup || PH.azureRg;
+  const nsg = nsgName || PH.azureNsg;
   const command = [
     `az network nsg rule create \\`,
     `  --resource-group ${rg} \\`,
@@ -84,8 +110,8 @@ const azureCommand = (p: FirewallParams): FirewallCommand => {
     `  --source-address-prefixes VirtualNetwork`,
   ].join('\n');
   const placeholders = dedupe([
-    p.azureResourceGroup ? '' : PH.azureRg,
-    p.azureNsgName ? '' : PH.azureNsg,
+    rg === PH.azureRg ? PH.azureRg : '',
+    nsg === PH.azureNsg ? PH.azureNsg : '',
   ]);
   return { command, placeholders };
 };
