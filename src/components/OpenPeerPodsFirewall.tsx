@@ -400,7 +400,8 @@ const OpenPeerPodsFirewall: FC = () => {
         provider === 'aws' ? (pp.AWS_REGION ?? cloud.region ?? awsNet.region) : pp.AZURE_REGION,
       awsSecurityGroupId: awsSg,
       azureResourceGroup: pp.AZURE_RESOURCE_GROUP ?? cloud.azureResourceGroup,
-      azureNsgName: pp.AZURE_NSG_ID,
+      // A full ARM resource id — buildFirewallCommand splits out the name and resource group.
+      azureNsg: pp.AZURE_NSG_ID,
     });
     return (
       <>
