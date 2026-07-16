@@ -73,11 +73,19 @@ const installingKataConfig = (nodeCount: number): WatchResult => [
   null,
 ];
 
+// No osc-feature-gates ConfigMap — the state of any cluster that never set a deployment mode, and
+// so the default this page must get right. A named watch for a missing object never flips `loaded`;
+// it 404s, and settledCm() reads that as "settled, absent". Modelling it as a clean load would
+// exercise a state the SDK never produces.
+const FEATURE_GATES_ABSENT: WatchResult = [undefined, false, { code: 404, message: 'not found' }];
+/** Still in flight: neither loaded nor errored. */
+const FEATURE_GATES_LOADING: WatchResult = [undefined, false, null];
+
 const setup = (opts: {
   topology?: string;
   infraLoaded?: boolean;
   featureGates?: Record<string, string>;
-  featureGatesSettled?: boolean;
+  featureGatesLoading?: boolean;
   kataConfig?: WatchResult;
 }): void => {
   watches.clear();
@@ -87,11 +95,14 @@ const setup = (opts: {
     'Infrastructure',
     opts.infraLoaded === false ? [undefined, false, null] : infrastructure(opts.topology),
   );
-  watches.set('ConfigMap/osc-feature-gates', [
-    opts.featureGates ? { data: opts.featureGates } : undefined,
-    opts.featureGatesSettled ?? true,
-    null,
-  ]);
+  watches.set(
+    'ConfigMap/osc-feature-gates',
+    opts.featureGates
+      ? [{ data: opts.featureGates }, true, null]
+      : opts.featureGatesLoading
+        ? FEATURE_GATES_LOADING
+        : FEATURE_GATES_ABSENT,
+  );
   watches.set('KataConfig', opts.kataConfig ?? [[], true, null]);
   render(<OscSetup />);
 };
@@ -118,6 +129,16 @@ describe('OscSetup — KataConfig step install copy', () => {
         ),
       ).not.toHaveLength(0);
       expect(copy(/The step turns green once the runtime is ready\./)).not.toHaveLength(0);
+    });
+
+    it('falls back to a countless estimate when the node count is unknown', () => {
+      setup({ topology: 'External', kataConfig: [[{ metadata: {}, spec: {} }], true, null] });
+      expect(copy(/drains and reboots/)).toHaveLength(0);
+      expect(
+        copy(
+          /Each worker installs the runtime live via a DaemonSet — no drain or reboot\. Usually a few minutes\./,
+        ),
+      ).not.toHaveLength(0);
     });
   });
 
@@ -175,7 +196,7 @@ describe('OscSetup — KataConfig step install copy', () => {
     it('makes no reboot claim while the feature gates are still loading', () => {
       setup({
         topology: 'HighlyAvailable',
-        featureGatesSettled: false,
+        featureGatesLoading: true,
         kataConfig: installingKataConfig(2),
       });
       expect(copy(/reboot/)).toHaveLength(0);
