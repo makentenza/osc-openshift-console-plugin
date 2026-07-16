@@ -74,6 +74,27 @@ describe('buildFirewallCommand', () => {
       expect(command).toContain('--resource-group nsg-rg');
     });
 
+    // ARM ids are case-insensitive and Azure tooling does emit '/resourcegroups/'.
+    it('reads the resource group from an id whatever the segment casing', () => {
+      const { command } = buildFirewallCommand('azure', {
+        azureNsg:
+          '/subscriptions/0000/resourcegroups/nsg-rg/providers/Microsoft.Network/networkSecurityGroups/my-nsg',
+      });
+      expect(command).toContain('--resource-group nsg-rg');
+      expect(command).toContain('--nsg-name my-nsg');
+    });
+
+    // A truncated id must not mistake the resource group for the nsg name.
+    it('falls back to the supplied resource group for a truncated id', () => {
+      const { command, placeholders } = buildFirewallCommand('azure', {
+        azureResourceGroup: 'my-rg',
+        azureNsg: '/subscriptions/0000/resourceGroups/only-rg',
+      });
+      expect(command).toContain('--resource-group my-rg');
+      expect(command).toContain('--nsg-name only-rg');
+      expect(placeholders).toEqual([]);
+    });
+
     it('keeps the resolved resource group while marking the nsg as a placeholder', () => {
       const { command, placeholders } = buildFirewallCommand('azure', {
         azureResourceGroup: 'my-rg',
