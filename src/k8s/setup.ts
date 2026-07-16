@@ -10,6 +10,7 @@ import {
   CloudCredentialGVK,
   ConfigMapGVK,
   ConfigMapModel,
+  FEATURE_GATES_CM,
   FIREWALL_OPENED_KEY,
   InfrastructureGVK,
   MachineSetGVK,
@@ -20,6 +21,11 @@ import {
 } from './resources';
 import type { ConfigMapKind } from './types';
 import { toGcpNetworkPath } from '../utils/gcp';
+import {
+  isHostedTopology,
+  resolveDeploymentMode,
+  type DeploymentMode,
+} from '../utils/deploymentMode';
 
 export type InfrastructureKind = K8sResourceCommon & {
   status?: {
@@ -139,6 +145,44 @@ export const useClusterPlatform = (): string | undefined => {
     name: 'cluster',
   });
   return infra?.status?.platform;
+};
+
+/**
+ * Infrastructure.status.controlPlaneTopology — 'External' on a hosted (HyperShift/HCP) cluster,
+ * 'HighlyAvailable'/'SingleReplica' on a standalone one. undefined until Infrastructure loads.
+ */
+export const useControlPlaneTopology = (): string | undefined => {
+  const [infra] = useK8sWatchResource<InfrastructureKind>({
+    groupVersionKind: InfrastructureGVK,
+    name: 'cluster',
+  });
+  return infra?.status?.controlPlaneTopology;
+};
+
+/** The operator's osc-feature-gates ConfigMap. Returns `[cm, settled]`; absent is normal. */
+export const useFeatureGatesCm = (): [ConfigMapKind | undefined, boolean] =>
+  settledCm(
+    useK8sWatchResource<ConfigMapKind>({
+      groupVersionKind: ConfigMapGVK,
+      namespace: OSC_NAMESPACE,
+      name: FEATURE_GATES_CM,
+    }),
+  );
+
+/**
+ * How the operator will install the kata runtime on this cluster — DaemonSet (live) or
+ * MachineConfig (drain + reboot per node) — from the deploymentMode feature gate and the
+ * control-plane topology. Any screen that describes the install should read the mode from here so
+ * they cannot contradict each other about rebooting (issue #58).
+ *
+ * undefined until it's genuinely known: a gate of DaemonSet on a standalone cluster is legitimate,
+ * so answering from the topology before the ConfigMap settles would flash the wrong copy.
+ */
+export const useResolvedDeploymentMode = (): DeploymentMode | undefined => {
+  const [fg, fgSettled] = useFeatureGatesCm();
+  const isHosted = isHostedTopology(useControlPlaneTopology());
+  if (!fgSettled) return undefined;
+  return resolveDeploymentMode(fg?.data?.deploymentMode, isHosted);
 };
 
 export type CloudCredentialKind = K8sResourceCommon & {
