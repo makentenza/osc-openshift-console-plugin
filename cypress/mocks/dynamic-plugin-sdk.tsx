@@ -22,16 +22,34 @@ interface WatchResource {
 
 declare global {
   interface Window {
-    /** Keyed by resource `name`; `__list` / `__single` are fallbacks for unnamed watches. */
+    /**
+     * Keyed by `Kind/name`, `Kind`, or `name` (most specific wins); `__list` / `__single` are
+     * fallbacks. A name alone is enough for uniquely-named objects, but not always: Infrastructure
+     * and CloudCredential are both named `cluster`, and unnamed list watches have no name at all —
+     * so those need a Kind key to be told apart.
+     */
     __watchResults?: Record<string, WatchResult>;
     __k8sCreateCalls?: unknown[];
     __k8sUpdateCalls?: unknown[];
+    __k8sDeleteCalls?: unknown[];
+    __k8sPatchCalls?: unknown[];
   }
 }
 
+/** Lookup keys for a watch, most specific first. */
+const watchKeys = (resource: WatchResource): string[] => {
+  const kind = resource.groupVersionKind?.kind;
+  const keys: string[] = [];
+  if (kind && resource.name) keys.push(`${kind}/${resource.name}`);
+  if (kind) keys.push(kind);
+  if (resource.name) keys.push(resource.name);
+  return keys;
+};
+
 export const useK8sWatchResource = (resource: WatchResource | null): WatchResult => {
   const results = window.__watchResults ?? {};
-  if (resource?.name && results[resource.name]) return results[resource.name];
+  const hit = resource ? watchKeys(resource).find((k) => results[k]) : undefined;
+  if (hit) return results[hit];
   if (resource?.isList) return results.__list ?? [[], true, undefined];
   return results.__single ?? [undefined, true, undefined];
 };
@@ -50,6 +68,9 @@ export const ListPageHeader: React.FC<{ title?: string; children?: React.ReactNo
   </div>
 );
 
+/** Renders the resource name; the real one links into the console's resource pages. */
+export const ResourceLink: React.FC<{ name?: string }> = ({ name }) => <span>{name}</span>;
+
 export const k8sCreate = (payload: unknown): Promise<unknown> => {
   (window.__k8sCreateCalls ??= []).push(payload);
   return Promise.resolve(payload);
@@ -59,3 +80,21 @@ export const k8sUpdate = (payload: unknown): Promise<unknown> => {
   (window.__k8sUpdateCalls ??= []).push(payload);
   return Promise.resolve(payload);
 };
+
+export const k8sDelete = (payload: unknown): Promise<unknown> => {
+  (window.__k8sDeleteCalls ??= []).push(payload);
+  return Promise.resolve(payload);
+};
+
+export const k8sPatch = (payload: unknown): Promise<unknown> => {
+  (window.__k8sPatchCalls ??= []).push(payload);
+  return Promise.resolve(payload);
+};
+
+/**
+ * Components reach for k8sGet on user actions (the firewall apply flow, the KataConfig wizard's
+ * feature-gate merge), never on mount. Reject as not-found so anything that does call it takes its
+ * absent-resource path rather than hanging on a promise that never settles.
+ */
+export const k8sGet = (): Promise<unknown> =>
+  Promise.reject(Object.assign(new Error('not found'), { code: 404 }));
