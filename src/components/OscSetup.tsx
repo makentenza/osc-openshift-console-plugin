@@ -32,8 +32,10 @@ import {
   useClusterPlatform,
   useFirewallOpened,
   usePeerPodsCm,
+  useResolvedDeploymentMode,
 } from '../k8s/setup';
 import { KataConfigGVK, OSC_NAMESPACE, PODVM_IMAGE_JOB } from '../k8s/resources';
+import { modeWillReboot } from '../utils/deploymentMode';
 import { kataConfigReadiness } from '../utils/status';
 import OpenPeerPodsFirewall from './OpenPeerPodsFirewall';
 import './sandbox.css';
@@ -127,6 +129,10 @@ const OscSetup: FC = () => {
   const [peerPodsCm] = usePeerPodsCm();
   const platform = useClusterPlatform();
   const [firewallOpened] = useFirewallOpened();
+  // How the operator installs the runtime here — DaemonSet installs live, MachineConfig drains and
+  // reboots. Same resolution the KataConfig wizard uses, so the two screens can't contradict each
+  // other about rebooting (issue #58). undefined until known: say nothing rather than guess wrong.
+  const willReboot = modeWillReboot(useResolvedDeploymentMode());
 
   const ppData = peerPodsCm?.data ?? {};
   const ppProvider = ppData.CLOUD_PROVIDER;
@@ -141,8 +147,46 @@ const OscSetup: FC = () => {
   // peer-pods-cm is configured (issue: peer-pods-cm ordering). Once KataConfig exists the order no
   // longer matters, so only guard while it's still absent.
   const blockedOnPeerPodsCm = kata.phase === 'absent' && !ppConfigured;
-  // A node-count-aware estimate while KataConfig is rolling out: each worker drains and reboots.
+  // A node-count-aware estimate while KataConfig is rolling out.
   const installingNodeCount = kata.totalNodes > 0 ? kata.totalNodes : undefined;
+
+  // What creating a KataConfig will do to the user's nodes. A DaemonSet install touches neither, so
+  // the reboot copy would be plainly false on a hosted cluster.
+  const createKataDetail = (): string =>
+    willReboot === true
+      ? t(
+          'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. Each node reboots to install it, so this takes a few minutes.',
+        )
+      : willReboot === false
+        ? t(
+            'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. A DaemonSet installs it live, without draining or rebooting nodes, so this takes a few minutes.',
+          )
+        : t(
+            'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. This takes a few minutes.',
+          );
+
+  // The same distinction while it rolls out — a reboot window is a much longer wait than a
+  // DaemonSet rollout, so the estimate has to follow the mode too.
+  const installingDetail = (): string => {
+    if (willReboot === undefined) return t('The runtime is installing on each worker.');
+    if (willReboot)
+      return installingNodeCount
+        ? t(
+            'Each node drains and reboots to install the runtime — expect roughly 5–20 min for {{nodes}} worker(s).',
+            { nodes: installingNodeCount },
+          )
+        : t(
+            'Each node drains and reboots to install the runtime — expect roughly 5–20 min per worker.',
+          );
+    return installingNodeCount
+      ? t(
+          'Each worker installs the runtime live via a DaemonSet — no drain or reboot. Usually a few minutes for {{nodes}} worker(s).',
+          { nodes: installingNodeCount },
+        )
+      : t(
+          'Each worker installs the runtime live via a DaemonSet — no drain or reboot. Usually a few minutes.',
+        );
+  };
 
   const steps: Step[] = [
     {
@@ -189,9 +233,7 @@ const OscSetup: FC = () => {
       detail:
         kata.phase === 'absent' ? (
           <>
-            {t(
-              'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. Each node reboots to install it, so this takes a few minutes.',
-            )}
+            {createKataDetail()}
             {blockedOnPeerPodsCm && (
               <div className="osc-openshift-console-plugin__mt">
                 <ExclamationTriangleIcon className="osc-openshift-console-plugin__icon-warning" />{' '}
@@ -254,14 +296,7 @@ const OscSetup: FC = () => {
             </Flex>
             {kata.phase === 'installing' && (
               <div className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt">
-                {installingNodeCount
-                  ? t(
-                      'Each node drains and reboots to install the runtime — expect roughly 5–20 min for {{nodes}} worker(s). The step turns green once the runtime is ready.',
-                      { nodes: installingNodeCount },
-                    )
-                  : t(
-                      'Each node drains and reboots to install the runtime — expect roughly 5–20 min per worker. The step turns green once the runtime is ready.',
-                    )}
+                {installingDetail()} {t('The step turns green once the runtime is ready.')}
               </div>
             )}
             {kata.blockedByExistingPods && (

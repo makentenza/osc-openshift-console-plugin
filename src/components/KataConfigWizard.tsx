@@ -38,19 +38,24 @@ import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
   ConfigMapModel,
-  InfrastructureGVK,
+  FEATURE_GATES_CM,
   KATA_NODE_LABEL,
   KataConfigModel,
   NodeGVK,
   NodeModel,
 } from '../k8s/resources';
-import type { InfrastructureKind } from '../k8s/setup';
+import { useControlPlaneTopology } from '../k8s/setup';
 import type { NodeKind } from '../k8s/types';
+import {
+  DAEMONSET_FALLBACK,
+  isHostedTopology,
+  modeWillReboot,
+  resolveDeploymentMode,
+} from '../utils/deploymentMode';
 import { toYaml } from '../utils/yaml';
 import './sandbox.css';
 
 const WORKER_LABEL = 'node-role.kubernetes.io/worker';
-const FG_CONFIGMAP_NAME = 'osc-feature-gates';
 const OPERATOR_NAMESPACE = 'openshift-sandboxed-containers-operator';
 
 type DeployMode = 'Auto' | 'DaemonSet' | 'MachineConfig';
@@ -60,7 +65,7 @@ type DeployMode = 'Auto' | 'DaemonSet' | 'MachineConfig';
 // Operator is absent (hosted/HCP clusters) and via MachineConfig otherwise (standalone) — so it is
 // correct on both topologies with zero user input.
 const DEPLOYMENT_MODE_VALUE: Record<DeployMode, string> = {
-  Auto: 'DaemonSetFallback',
+  Auto: DAEMONSET_FALLBACK,
   DaemonSet: 'DaemonSet',
   MachineConfig: 'MachineConfig',
 };
@@ -91,12 +96,8 @@ const KataConfigWizard: FC = () => {
 
   // Detect a hosted control plane (HyperShift/HCP): controlPlaneTopology === 'External' means there
   // is no in-cluster MachineConfig Operator, so kata must install via DaemonSet (no node reboots).
-  const [infra] = useK8sWatchResource<InfrastructureKind>({
-    groupVersionKind: InfrastructureGVK,
-    name: 'cluster',
-  });
-  const topology = infra?.status?.controlPlaneTopology;
-  const isHosted = topology === undefined ? undefined : topology === 'External';
+  const topology = useControlPlaneTopology();
+  const isHosted = isHostedTopology(topology);
 
   // A hand-picked node set is targeted by labeling those nodes and selecting on that label.
   const useSpecificNodes = nodeMode === 'specific' && selectedNodes.length > 0;
@@ -108,16 +109,9 @@ const KataConfigWizard: FC = () => {
   };
 
   const deploymentModeValue = DEPLOYMENT_MODE_VALUE[deployMode];
-  // What 'Auto' resolves to on this cluster (drives the reboot warning). undefined while detecting.
-  const resolvedMode: 'DaemonSet' | 'MachineConfig' | undefined =
-    deployMode === 'Auto'
-      ? isHosted === undefined
-        ? undefined
-        : isHosted
-          ? 'DaemonSet'
-          : 'MachineConfig'
-      : deployMode;
-  const willReboot = resolvedMode === undefined ? undefined : resolvedMode === 'MachineConfig';
+  // What the selection resolves to on this cluster (drives the reboot warning) — shared with the
+  // setup checklist so the two screens agree on whether nodes reboot. undefined while detecting.
+  const willReboot = modeWillReboot(resolveDeploymentMode(deploymentModeValue, isHosted));
 
   const spec: Record<string, unknown> = { enablePeerPods, checkNodeEligibility, logLevel };
   if (useSpecificNodes) {
@@ -138,7 +132,7 @@ const KataConfigWizard: FC = () => {
   const featureGateManifest: ConfigMapKind = {
     apiVersion: 'v1',
     kind: 'ConfigMap',
-    metadata: { name: FG_CONFIGMAP_NAME, namespace: OPERATOR_NAMESPACE },
+    metadata: { name: FEATURE_GATES_CM, namespace: OPERATOR_NAMESPACE },
     data: { deploymentMode: deploymentModeValue },
   };
 
@@ -149,7 +143,7 @@ const KataConfigWizard: FC = () => {
     try {
       const existing = await k8sGet<ConfigMapKind>({
         model: ConfigMapModel,
-        name: FG_CONFIGMAP_NAME,
+        name: FEATURE_GATES_CM,
         ns: OPERATOR_NAMESPACE,
       });
       // Merge so we preserve any other feature gates already set (confidential, layeredImageDeployment).
@@ -300,7 +294,7 @@ const KataConfigWizard: FC = () => {
                         <HelperTextItem>
                           {t(
                             'Sets deploymentMode in the {{cm}} ConfigMap (created for you). Auto uses DaemonSetFallback: DaemonSet where there is no MachineConfig Operator (hosted clusters), MachineConfig otherwise.',
-                            { cm: FG_CONFIGMAP_NAME },
+                            { cm: FEATURE_GATES_CM },
                           )}
                         </HelperTextItem>
                         {isHosted !== undefined && (
