@@ -17,9 +17,9 @@ declare global {
   }
 }
 
-const renderOn = (cloudProvider: string) => {
+const renderOn = (cloudProvider: string, data: Record<string, string> = {}) => {
   window.__watchResults = {
-    'peer-pods-cm': [{ data: { CLOUD_PROVIDER: cloudProvider } }, true, undefined],
+    'peer-pods-cm': [{ data: { CLOUD_PROVIDER: cloudProvider, ...data } }, true, undefined],
   };
   return render(<OpenPeerPodsFirewall />);
 };
@@ -36,17 +36,36 @@ describe('OpenPeerPodsFirewall — Azure', () => {
     expect(screen.queryByText(/--nsg-name/)).not.toBeInTheDocument();
   });
 
-  it('says no action is needed, and names the ports for a locked-down VNet', () => {
+  // The ports carry different protocols — the deleted command opened both with --protocol '*', so
+  // dropping it must not leave a user writing a TCP-only rule that silently kills the VXLAN tunnel.
+  it('says no action is needed, and names both ports with their protocols', () => {
     renderOn('azure');
 
     expect(screen.getByText(/No action needed on Azure/)).toBeInTheDocument();
-    expect(screen.getByText(/allow ports 15150 and 9000/)).toBeInTheDocument();
+    expect(screen.getByText(/TCP 15150 \(kata agent\)/)).toBeInTheDocument();
+    expect(screen.getByText(/UDP 9000 \(VXLAN tunnel\)/)).toBeInTheDocument();
   });
+});
 
-  // Removing Azure must not disturb the AWS command, which is still needed and still resolved.
-  it('leaves the AWS command in place', () => {
-    renderOn('aws');
+// Removing Azure must not disturb the AWS command, which is still needed and still resolved.
+describe('OpenPeerPodsFirewall — AWS is untouched', () => {
+  it('still resolves the region and security group into the command', () => {
+    renderOn('aws', { AWS_REGION: 'eu-west-2', AWS_SG_IDS: 'sg-0abc123,sg-0def456' });
 
     expect(screen.getByText(/aws ec2 authorize-security-group-ingress/)).toBeInTheDocument();
+    expect(screen.getByText(/--region eu-west-2/)).toBeInTheDocument();
+    // The rule targets the pod VM security group, so the first id is the one used.
+    expect(screen.getByText(/--group-id sg-0abc123/)).toBeInTheDocument();
+    expect(screen.getByText(/FromPort=15150/)).toBeInTheDocument();
+    expect(screen.getByText(/FromPort=9000/)).toBeInTheDocument();
+    expect(screen.queryByText(/<region>/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/<sg-xxxxxxxx>/)).not.toBeInTheDocument();
+  });
+
+  it('still marks what the cluster cannot supply as placeholders', () => {
+    renderOn('aws');
+
+    expect(screen.getByText(/<sg-xxxxxxxx>/)).toBeInTheDocument();
+    expect(screen.getByText(/Replace the placeholder value\(s\)/)).toBeInTheDocument();
   });
 });

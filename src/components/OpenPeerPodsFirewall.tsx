@@ -396,7 +396,7 @@ const OpenPeerPodsFirewall: FC = () => {
     return (
       <Content component="p" className="osc-openshift-console-plugin__muted">
         {t(
-          'No action needed on Azure — peer pods reach the pod VMs over the cluster VNet, which the default network security group already allows. Only if you have restricted intra-VNet traffic with your own NSG rules, allow ports 15150 and 9000 from your workers to the pod VM subnet.',
+          'No action needed on Azure — peer pods reach the pod VMs over the cluster VNet, which the default network security group already allows. Only if you have restricted intra-VNet traffic with your own NSG rules, allow TCP 15150 (kata agent) and UDP 9000 (VXLAN tunnel) from your workers to the pod VM subnet.',
         )}
       </Content>
     );
