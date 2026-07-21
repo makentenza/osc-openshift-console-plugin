@@ -143,6 +143,32 @@ describe('PeerPodsConfigWizard — Azure confidential computing', () => {
     expect(written().DISABLECVM).toBe('false');
   });
 
+  /**
+   * The deliberate behaviour change, pinned so it cannot be "fixed" by accident: a config map
+   * written before this existed has no DISABLECVM key at all and is implicitly confidential. Saving
+   * it through the wizard now pins it non-confidential, matching AWS and GCP. Flipping this back
+   * means changing the default, not patching around it.
+   */
+  it('pins an existing config map that never stated a choice to non-confidential', async () => {
+    renderWizard([
+      {
+        apiVersion: 'v1',
+        kind: 'ConfigMap',
+        metadata: { name: PEER_PODS_CM, namespace: 'openshift-sandboxed-containers-operator' },
+        data: { CLOUD_PROVIDER: 'azure', AZURE_REGION: 'westeurope' },
+      },
+      true,
+      undefined,
+    ]);
+
+    expect(screen.getByLabelText(/Run pod VMs as Azure Confidential VMs/)).not.toBeChecked();
+    await submit('Save');
+
+    expect(written().DISABLECVM).toBe('true');
+    // Everything else it already had survives the save.
+    expect(written().AZURE_REGION).toBe('westeurope');
+  });
+
   // AWS and GCP have no confidential support in OSC 1.12 — they stay forced, and get no toggle.
   it('leaves AWS forced to non-confidential and offers no toggle', async () => {
     renderOn('AWS');
