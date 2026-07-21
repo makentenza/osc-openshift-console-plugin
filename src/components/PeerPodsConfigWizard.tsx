@@ -43,6 +43,7 @@ import {
 } from '../k8s/setup';
 import { toYaml } from '../utils/yaml';
 import { normalizeCsvList } from '../utils/csv';
+import { parsePeerPodsBool } from '../utils/peerPods';
 import { AZURE_DEPLOY_DOCS } from '../utils/caaDiagnostics';
 import FetchAwsNetworking from './FetchAwsNetworking';
 import './sandbox.css';
@@ -244,11 +245,14 @@ const PeerPodsConfigWizard: FC = () => {
     setValues((prev) => ({ ...prev, [key]: v }));
   };
 
-  const usePublicIp = (values.USE_PUBLIC_IP ?? existing?.data?.USE_PUBLIC_IP) === 'true';
+  const usePublicIp =
+    parsePeerPodsBool(values.USE_PUBLIC_IP ?? existing?.data?.USE_PUBLIC_IP) === true;
   // Azure is the only provider where confidential VMs are a choice, and it was never surfaced: the
   // wizard wrote no DISABLECVM at all, leaving the cloud-api-adaptor's own default in charge with no
-  // way to opt out from the UI (issue #68). Off unless the config map already asks for it.
-  const azureConfidential = (values.DISABLECVM ?? existing?.data?.DISABLECVM) === 'false';
+  // way to opt out from the UI (issue #68). Off unless the config map already asks for it —
+  // DISABLECVM=false being the ask, in any spelling the adaptor would accept.
+  const azureConfidential =
+    parsePeerPodsBool(values.DISABLECVM ?? existing?.data?.DISABLECVM) === false;
 
   const data: Record<string, string> = { CLOUD_PROVIDER: provider };
   [...FIELDS[provider], ...ADVANCED_FIELDS[provider]].forEach((f) => {
@@ -267,7 +271,9 @@ const PeerPodsConfigWizard: FC = () => {
   // way, so the config map states it outright instead of inheriting a default nobody chose (#68).
   if (provider === 'aws' || provider === 'gcp') data.DISABLECVM = 'true';
   else if (provider === 'azure') data.DISABLECVM = azureConfidential ? 'false' : 'true';
-  if (usePublicIp) data.USE_PUBLIC_IP = 'true';
+  // Write both directions. Setting the key only when true meant switching it back off left the old
+  // "true" in place through the merge below, so the wizard showed off while the cluster stayed on.
+  data.USE_PUBLIC_IP = usePublicIp ? 'true' : 'false';
   // The operator fills PODVM_AMI_ID in after KataConfig runs, so the user doesn't (issue #28). Seed
   // an empty key on a brand-new AWS config map so the operator populates it; never overwrite a value
   // already present (operator-written, or a custom AMI pinned under Advanced options).

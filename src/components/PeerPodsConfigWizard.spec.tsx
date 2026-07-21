@@ -141,7 +141,40 @@ describe('PeerPodsConfigWizard — Azure confidential computing', () => {
     await submit('Save');
 
     expect(written().DISABLECVM).toBe('false');
+    // The merge would preserve an untouched key on its own, so prove the wizard wrote this one:
+    // toggling off must reach the config map, which only happens if Azure is written every time.
+    await userEvent.click(screen.getByLabelText(/Run pod VMs as Azure Confidential VMs/));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(written().DISABLECVM).toBe('true');
+    });
   });
+
+  /**
+   * DISABLECVM is a Go boolean to the cloud-api-adaptor, so "False" already means confidential.
+   * Recognising only the exact string 'false' read such a config map as saying the opposite of what
+   * it says — and, because Azure is now written on every save, silently rewrote it.
+   */
+  it.each(['False', 'FALSE', '0', 'f'])(
+    'treats DISABLECVM=%s as confidential rather than overwriting it',
+    async (spelling) => {
+      renderWizard([
+        {
+          apiVersion: 'v1',
+          kind: 'ConfigMap',
+          metadata: { name: PEER_PODS_CM, namespace: 'openshift-sandboxed-containers-operator' },
+          data: { CLOUD_PROVIDER: 'azure', DISABLECVM: spelling },
+        },
+        true,
+        undefined,
+      ]);
+
+      expect(screen.getByLabelText(/Run pod VMs as Azure Confidential VMs/)).toBeChecked();
+      await submit('Save');
+
+      expect(written().DISABLECVM).toBe('false');
+    },
+  );
 
   /**
    * The deliberate behaviour change, pinned so it cannot be "fixed" by accident: a config map
@@ -217,9 +250,53 @@ describe('PeerPodsConfigWizard — comma-separated allow-lists', () => {
     expect(written().PODVM_INSTANCE_TYPES).toBe('t2.small,t3.large');
   });
 
-  it('no longer tells the user to avoid spaces', () => {
-    renderOn('Azure');
+  it('strips them from the AWS security group IDs', async () => {
+    renderOn('AWS');
+
+    await userEvent.type(screen.getByLabelText('Security group IDs'), 'sg-0abc, sg-0def');
+    await submit('Create');
+
+    expect(written().AWS_SG_IDS).toBe('sg-0abc,sg-0def');
+  });
+
+  it.each(['Azure', 'AWS'])('no longer tells the user to avoid spaces on %s', (platform) => {
+    renderOn(platform);
 
     expect(screen.queryByText(/Comma-separated, no spaces/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Writing a key only when it is true left the old value in place through the save merge, so
+ * switching "Use public IP" back off on an existing config map did nothing — the wizard showed off
+ * while the cluster went on routing pod VM traffic over public IPs.
+ */
+describe('PeerPodsConfigWizard — turning a switch back off', () => {
+  beforeEach(() => {
+    window.__watchResults = {};
+    window.__k8sCreateCalls = [];
+    window.__k8sUpdateCalls = [];
+  });
+
+  it('clears USE_PUBLIC_IP on an existing config map', async () => {
+    renderWizard([
+      {
+        apiVersion: 'v1',
+        kind: 'ConfigMap',
+        metadata: { name: PEER_PODS_CM, namespace: 'openshift-sandboxed-containers-operator' },
+        data: { CLOUD_PROVIDER: 'azure', USE_PUBLIC_IP: 'true' },
+      },
+      true,
+      undefined,
+    ]);
+
+    await userEvent.click(screen.getByText('Advanced options'));
+    const publicIp = screen.getByLabelText(/Reach pod VMs over their public IP/);
+    expect(publicIp).toBeChecked();
+
+    await userEvent.click(publicIp);
+    await submit('Save');
+
+    expect(written().USE_PUBLIC_IP).toBe('false');
   });
 });
