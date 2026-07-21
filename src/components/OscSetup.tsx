@@ -141,12 +141,13 @@ const OscSetup: FC = () => {
   const kata = kataConfigReadiness(kataConfig);
   const podvmImageName = ppData.PODVM_IMAGE_NAME ?? ppData.PODVM_AMI_ID ?? ppData.AZURE_IMAGE_ID;
 
-  // peer-pods-cm must exist *before* KataConfig: the operator reads it while reconciling, and a
-  // KataConfig created first comes up without peer pods wired and has to be recreated. This template
-  // installs the kata-remote (peer pods) runtime, so gate the Create-KataConfig CTA until
-  // peer-pods-cm is configured (issue: peer-pods-cm ordering). Once KataConfig exists the order no
-  // longer matters, so only guard while it's still absent.
-  const blockedOnPeerPodsCm = kata.phase === 'absent' && !ppConfigured;
+  // peer-pods-cm must exist *before* KataConfig if you want peer pods: the operator reads it while
+  // reconciling, and a KataConfig created first comes up without peer pods wired and has to be
+  // recreated. That used to hide the Create-KataConfig CTA outright, which forced peer pods on
+  // everyone — but on-node sandboxed containers are a valid cloud setup and need no config map at
+  // all (issue #69). Advise instead of blocking; the wizard's own peer pods switch is where the
+  // choice is made, and it warns there. Once KataConfig exists the order no longer matters.
+  const peerPodsCmMissing = kata.phase === 'absent' && !ppConfigured;
   // A node-count-aware estimate while KataConfig is rolling out.
   const installingNodeCount = kata.totalNodes > 0 ? kata.totalNodes : undefined;
 
@@ -234,11 +235,11 @@ const OscSetup: FC = () => {
         kata.phase === 'absent' ? (
           <>
             {createKataDetail()}
-            {blockedOnPeerPodsCm && (
+            {peerPodsCmMissing && (
               <div className="osc-openshift-console-plugin__mt">
-                <ExclamationTriangleIcon className="osc-openshift-console-plugin__icon-warning" />{' '}
+                <InfoCircleIcon className="osc-openshift-console-plugin__icon-info" />{' '}
                 {t(
-                  'Configure the peer pods config map first. The operator reads peer-pods-cm while installing KataConfig — creating KataConfig before it means recreating KataConfig later.',
+                  'Going to use peer pods? Configure the peer pods config map first — the operator reads peer-pods-cm while installing KataConfig, so creating KataConfig before it means recreating it later. For on-node sandboxed containers you do not need one; leave peer pods off in the wizard.',
                 )}
               </div>
             )}
@@ -310,9 +311,8 @@ const OscSetup: FC = () => {
             )}
           </>
         ),
-      // Gate the CTA until peer-pods-cm exists so users can't create KataConfig in the wrong order.
       action:
-        kata.phase === 'absent' && !blockedOnPeerPodsCm
+        kata.phase === 'absent'
           ? { label: t('Create KataConfig'), href: '/sandboxes/setup/kataconfig' }
           : undefined,
     },
