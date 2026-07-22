@@ -169,6 +169,13 @@ const ADVANCED_FIELDS: Record<string, Field[]> = {
   azure: [TAGS_FIELD, ROOT_VOLUME_FIELD],
 };
 
+/**
+ * Keys the operator owns: the wizard seeds them empty and the operator fills them in after
+ * KataConfig runs. An empty field here means "not written yet", not "the user cleared it", so
+ * clearing must never delete them — that would throw away the image the operator registered.
+ */
+const OPERATOR_MANAGED_KEYS = new Set(['PODVM_AMI_ID', 'AZURE_IMAGE_ID']);
+
 const DEFAULTS: Record<string, string> = {
   VXLAN_PORT: '9000',
   PROXY_TIMEOUT: '5m',
@@ -278,8 +285,28 @@ const PeerPodsConfigWizard: FC = () => {
   )
     data.AZURE_IMAGE_ID = '';
 
+  // Fields this provider's form showed that the user has emptied. The merge below spreads the
+  // existing data first, so without this an emptied field simply kept its old value: the form read
+  // blank while the cluster carried on using the setting, and there was no way to unset one.
+  // Only the keys this form actually renders are considered — anything else in the config map
+  // (another provider's keys, something added by hand) is left alone.
+  const cleared = new Set(
+    [...FIELDS[provider], ...ADVANCED_FIELDS[provider]]
+      .map((f) => f.key)
+      .filter(
+        (key) =>
+          !OPERATOR_MANAGED_KEYS.has(key) &&
+          data[key] === undefined &&
+          existing?.data?.[key] !== undefined,
+      ),
+  );
+
+  const mergedData = Object.fromEntries(
+    Object.entries({ ...existing?.data, ...data }).filter(([key]) => !cleared.has(key)),
+  );
+
   const cm: ConfigMapKind & K8sResourceCommon = existing
-    ? { ...existing, data: { ...existing.data, ...data } }
+    ? { ...existing, data: mergedData }
     : {
         apiVersion: 'v1',
         kind: 'ConfigMap',
