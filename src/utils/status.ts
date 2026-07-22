@@ -54,6 +54,12 @@ export interface KataReadiness {
   failedNodes: number;
   /** Uninstall is blocked because pods still use the kata-remote runtime class (§8.1). */
   blockedByExistingPods: boolean;
+  /**
+   * Why the operator is working, when it says — display detail only, and only while it genuinely is
+   * working. A settled condition keeps its last reason ('Installed'), which paired with a phase that
+   * is still `installing` reads as the self-contradicting "Installing (Installed)".
+   */
+  reason?: string;
 }
 
 /**
@@ -84,7 +90,13 @@ export const kataConfigReadiness = (kc?: KataConfigKind): KataReadiness => {
   const blockedByExistingPods = inProgressCond?.reason === 'BlockedByExistingKataPods';
   const runtimeClasses = kc.status?.runtimeClasses?.length ?? 0;
 
-  const base = { readyNodes, totalNodes, failedNodes, blockedByExistingPods };
+  const base = {
+    readyNodes,
+    totalNodes,
+    failedNodes,
+    blockedByExistingPods,
+    reason: inProgress === 'True' ? inProgressCond?.reason : undefined,
+  };
   // Still churning: keep it "installing" even if a node transiently shows up as failed.
   if (inProgress === 'True') return { phase: 'installing', ready: false, ...base };
   if (failedNodes > 0) return { phase: 'failed', ready: false, ...base };
