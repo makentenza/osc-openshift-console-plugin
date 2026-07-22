@@ -61,6 +61,11 @@ export const DeploymentModel: K8sModel = {
 /** Where OSC operator resources live. */
 export const OSC_NAMESPACE = 'openshift-sandboxed-containers-operator';
 export const PEER_PODS_CM = 'peer-pods-cm';
+/**
+ * The operator's feature gates. Its `deploymentMode` key decides whether the kata runtime installs
+ * via a DaemonSet (live) or a MachineConfig (drain + reboot) — see utils/deploymentMode.
+ */
+export const FEATURE_GATES_CM = 'osc-feature-gates';
 export const PEER_PODS_SECRET = 'peer-pods-secret';
 export const CAA_DAEMONSET = 'osc-caa-ds';
 export const KATACONFIG_NAME = 'example-kataconfig';
