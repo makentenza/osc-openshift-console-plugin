@@ -85,9 +85,14 @@ const setup = (opts: {
   platform?: string;
   peerPodsCm?: Record<string, string>;
   ccoMode?: string;
+  /** Override the Infrastructure watch outright — for the loading and errored cases. */
+  infrastructure?: WatchResult;
 }): void => {
   watches.clear();
-  watches.set('Infrastructure', infrastructure(opts.platform ?? 'AWS', 'eu-west-2'));
+  watches.set(
+    'Infrastructure',
+    opts.infrastructure ?? infrastructure(opts.platform ?? 'AWS', 'eu-west-2'),
+  );
   watches.set('Node', [[workerNode], true, null]);
   // An AWS HCP guest cluster has no MachineSets at all — its machine-api lives on the management
   // cluster — so there is nothing in-cluster to read the security group from.
@@ -264,5 +269,118 @@ describe('OpenPeerPodsFirewall — AWS command wiring', () => {
 
     expect(copy(/<sg-xxxxxxxx>/)).not.toHaveLength(0);
     expect(copy(/Replace the placeholder value\(s\)/)).not.toHaveLength(0);
+  });
+});
+
+/**
+ * The provider used to fall back to 'gcp' whenever neither peer-pods-cm nor Infrastructure had
+ * answered — so a non-GCP cluster rendered the gcloud commands and an enabled "Apply in cluster"
+ * while the watch was in flight, and forever if it errored. That button mints a GCP credential, so
+ * the wrong answer was actionable rather than cosmetic.
+ */
+describe('OpenPeerPodsFirewall — before the cloud is known', () => {
+  const NEUTRAL =
+    /Open the peer pods communication ports — TCP 15150 \(agent\) and UDP 9000 \(VXLAN tunnel\)/;
+
+  it.each([
+    ['the Infrastructure watch is still loading', [undefined, false, null] as WatchResult],
+    ['the Infrastructure watch errored', [undefined, false, { code: 403 }] as WatchResult],
+  ])('claims no cloud while %s', (_case, infra) => {
+    setup({ infrastructure: infra });
+    render(<OpenPeerPodsFirewall />);
+
+    // Neither a gcloud command nor the credential-minting button it comes with.
+    expect(copy(/gcloud compute firewall-rules/)).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /Apply in cluster/ })).not.toBeInTheDocument();
+    // Say what is true for every cloud instead.
+    expect(copy(NEUTRAL)).not.toHaveLength(0);
+  });
+
+  it('shows the GCP flow once the cluster really does report GCP', () => {
+    setup({ platform: 'GCP' });
+    render(<OpenPeerPodsFirewall />);
+
+    expect(copy(/gcloud compute firewall-rules/)).not.toHaveLength(0);
+    expect(copy(NEUTRAL)).toHaveLength(0);
+  });
+
+  it('shows the AWS command once the cluster reports AWS', () => {
+    setup({ platform: 'AWS' });
+    render(<OpenPeerPodsFirewall />);
+
+    expect(copy(/aws ec2 authorize-security-group-ingress/)).not.toHaveLength(0);
+    expect(copy(/gcloud compute firewall-rules/)).toHaveLength(0);
+  });
+});
+
+/**
+ * The GCP branch promised "no placeholders to edit" unconditionally, but the project and network
+ * come from Infrastructure and the worker MachineSets — neither guaranteed. A UPI install with no
+ * MachineSets got a command containing <network>, no warning naming it, and an Apply button that
+ * was silently disabled because it needs both.
+ */
+describe('OpenPeerPodsFirewall — GCP with values the cluster cannot supply', () => {
+  /** GCP, project known from Infrastructure, but no MachineSet to name the network. */
+  const gcpNoNetwork = (): void => {
+    setup({ platform: 'GCP' });
+    watches.set('Infrastructure', [
+      { status: { platform: 'GCP', platformStatus: { gcp: { projectID: 'my-project' } } } },
+      true,
+      null,
+    ]);
+    watches.set('MachineSet', [[], true, null]);
+  };
+
+  it('does not claim there is nothing to edit', () => {
+    gcpNoNetwork();
+    render(<OpenPeerPodsFirewall />);
+
+    expect(copy(/--network=<network>/)).not.toHaveLength(0);
+    expect(copy(/no placeholders to edit/)).toHaveLength(0);
+    expect(copy(/replace the marked values before running it/)).not.toHaveLength(0);
+  });
+
+  it('names the placeholder it could not resolve', () => {
+    gcpNoNetwork();
+    render(<OpenPeerPodsFirewall />);
+
+    expect(copy(/Replace the placeholder value\(s\) before running: <network>\./)).not.toHaveLength(
+      0,
+    );
+  });
+
+  it('explains why Apply in cluster is disabled', () => {
+    gcpNoNetwork();
+    render(<OpenPeerPodsFirewall />);
+
+    expect(screen.getByRole('button', { name: /Apply in cluster/ })).toBeDisabled();
+    expect(copy(/Apply in cluster needs the project and network/)).not.toHaveLength(0);
+  });
+
+  it('keeps the original promise when the cluster does supply everything', () => {
+    setup({ platform: 'GCP' });
+    watches.set('Infrastructure', [
+      { status: { platform: 'GCP', platformStatus: { gcp: { projectID: 'my-project' } } } },
+      true,
+      null,
+    ]);
+    watches.set('MachineSet', [
+      [
+        {
+          spec: {
+            template: {
+              spec: { providerSpec: { value: { networkInterfaces: [{ network: 'my-vpc' }] } } },
+            },
+          },
+        },
+      ],
+      true,
+      null,
+    ]);
+    render(<OpenPeerPodsFirewall />);
+
+    expect(copy(/--network=my-vpc/)).not.toHaveLength(0);
+    expect(copy(/no placeholders to edit/)).not.toHaveLength(0);
+    expect(copy(/Replace the placeholder value\(s\)/)).toHaveLength(0);
   });
 });
