@@ -21,7 +21,11 @@ describe('parseLog', () => {
       'AWS_SG_IDS=sg-1,sg-2',
       'some trailing noise',
     ].join('\n');
-    expect(parseLog(log)).toEqual({ subnetId: 'subnet-0abc', vpcId: 'vpc-0def', sgIds: 'sg-1,sg-2' });
+    expect(parseLog(log)).toEqual({
+      subnetId: 'subnet-0abc',
+      vpcId: 'vpc-0def',
+      sgIds: 'sg-1,sg-2',
+    });
   });
   it('treats "None"/empty AWS CLI output as unset (so the form field stays blank)', () => {
     const log = ['AWS_SUBNET_ID=subnet-x', 'AWS_VPC_ID=None', 'AWS_SG_IDS='].join('\n');
