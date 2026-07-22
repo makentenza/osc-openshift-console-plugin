@@ -42,6 +42,8 @@ import {
   usePeerPodsCm,
 } from '../k8s/setup';
 import { toYaml } from '../utils/yaml';
+import { normalizeCsvList } from '../utils/csv';
+import { parsePeerPodsBool } from '../utils/peerPods';
 import { AZURE_DEPLOY_DOCS } from '../utils/caaDiagnostics';
 import FetchAwsNetworking from './FetchAwsNetworking';
 import './sandbox.css';
@@ -51,6 +53,8 @@ interface Field {
   label: string;
   placeholder?: string;
   help?: string;
+  /** A comma-separated allow-list — normalized on save so spacing can't break a lookup (#68). */
+  list?: boolean;
 }
 
 // Primary provider fields. GCP keys match the OpenShift sandboxed containers 1.12
@@ -83,13 +87,15 @@ const FIELDS: Record<string, Field[]> = {
       key: 'PODVM_INSTANCE_TYPES',
       label: 'Allowed instance types',
       placeholder: 't2.small,t2.medium,t3.large',
-      help: 'Comma-separated, no spaces. Instance types a workload may request by annotation; leave empty to allow only the default above.',
+      list: true,
+      help: 'Instance types a workload may request by annotation; leave empty to allow only the default above.',
     },
     { key: 'AWS_SUBNET_ID', label: 'Subnet ID' },
     { key: 'AWS_VPC_ID', label: 'VPC ID' },
     {
       key: 'AWS_SG_IDS',
       label: 'Security group IDs',
+      list: true,
       help: 'Comma-separated security group IDs (sg-…).',
     },
   ],
@@ -102,14 +108,15 @@ const FIELDS: Record<string, Field[]> = {
     {
       key: 'AZURE_INSTANCE_SIZE',
       label: 'Instance size',
-      placeholder: 'Standard_DC2as_v5',
-      help: 'The default Confidential VM size, used when a workload does not request one — AMD SEV-SNP (e.g. Standard_DC2as_v5) or Intel TDX (e.g. Standard_EC2eds_v5). A non-confidential size runs peer pods without a TEE, so attestation cannot work.',
+      placeholder: 'Standard_D2as_v5',
+      help: 'The default size used when a workload does not request one. With confidential computing on, it must be a Confidential VM size — AMD SEV-SNP (e.g. Standard_DC2as_v5) or Intel TDX (e.g. Standard_EC2eds_v5).',
     },
     {
       key: 'AZURE_INSTANCE_SIZES',
       label: 'Allowed instance sizes',
-      placeholder: 'Standard_DC2as_v5,Standard_DC4as_v5,Standard_EC2eds_v5',
-      help: 'Comma-separated, no spaces. Additional Confidential VM sizes a workload may request by annotation (io.katacontainers.config.hypervisor.machine_type); leave empty to allow only the default size above.',
+      placeholder: 'Standard_D2as_v5,Standard_D4as_v5',
+      list: true,
+      help: 'Additional sizes a workload may request by annotation (io.katacontainers.config.hypervisor.machine_type); leave empty to allow only the default size above.',
     },
     {
       key: 'AZURE_IMAGE_ID',
@@ -238,11 +245,19 @@ const PeerPodsConfigWizard: FC = () => {
     setValues((prev) => ({ ...prev, [key]: v }));
   };
 
-  const usePublicIp = (values.USE_PUBLIC_IP ?? existing?.data?.USE_PUBLIC_IP) === 'true';
+  const usePublicIp =
+    parsePeerPodsBool(values.USE_PUBLIC_IP ?? existing?.data?.USE_PUBLIC_IP) === true;
+  // Azure is the only provider where confidential VMs are a choice, and it was never surfaced: the
+  // wizard wrote no DISABLECVM at all, leaving the cloud-api-adaptor's own default in charge with no
+  // way to opt out from the UI (issue #68). Off unless the config map already asks for it —
+  // DISABLECVM=false being the ask, in any spelling the adaptor would accept.
+  const azureConfidential =
+    parsePeerPodsBool(values.DISABLECVM ?? existing?.data?.DISABLECVM) === false;
 
   const data: Record<string, string> = { CLOUD_PROVIDER: provider };
   [...FIELDS[provider], ...ADVANCED_FIELDS[provider]].forEach((f) => {
-    const v = fieldVal(f.key).trim();
+    const raw = fieldVal(f.key).trim();
+    const v = f.list ? normalizeCsvList(raw) : raw;
     if (v) data[f.key] = v;
   });
   data.VXLAN_PORT = fieldVal('VXLAN_PORT').trim() || DEFAULTS.VXLAN_PORT;
@@ -252,10 +267,13 @@ const PeerPodsConfigWizard: FC = () => {
   data.ROOT_VOLUME_SIZE = fieldVal('ROOT_VOLUME_SIZE').trim() || DEFAULTS.ROOT_VOLUME_SIZE;
   // AWS and GCP peer pods have no confidential-VM support in OSC 1.12, so they run without a TEE and
   // the cloud-api-adaptor requires DISABLECVM="true" (AWS docs §3.2 "Creating the peer pods config
-  // map"). Azure supports Confidential VM sizes, so its DISABLECVM is managed by the confidential-
-  // containers flow, not forced here.
+  // map"). Azure supports Confidential VM sizes, so the user picks — but write the answer either
+  // way, so the config map states it outright instead of inheriting a default nobody chose (#68).
   if (provider === 'aws' || provider === 'gcp') data.DISABLECVM = 'true';
-  if (usePublicIp) data.USE_PUBLIC_IP = 'true';
+  else if (provider === 'azure') data.DISABLECVM = azureConfidential ? 'false' : 'true';
+  // Write both directions. Setting the key only when true meant switching it back off left the old
+  // "true" in place through the merge below, so the wizard showed off while the cluster stayed on.
+  data.USE_PUBLIC_IP = usePublicIp ? 'true' : 'false';
   // The operator fills PODVM_AMI_ID in after KataConfig runs, so the user doesn't (issue #28). Seed
   // an empty key on a brand-new AWS config map so the operator populates it; never overwrite a value
   // already present (operator-written, or a custom AMI pinned under Advanced options).
@@ -366,6 +384,28 @@ const PeerPodsConfigWizard: FC = () => {
                       )}
                     </FormGroup>
                   ))}
+
+                  {provider === 'azure' && (
+                    <FormGroup label={t('Confidential computing')} fieldId="pp-cvm">
+                      <Switch
+                        id="pp-cvm"
+                        isChecked={azureConfidential}
+                        onChange={(_e, c) => {
+                          set('DISABLECVM', c ? 'false' : 'true');
+                        }}
+                        label={t('Run pod VMs as Azure Confidential VMs (DISABLECVM=false)')}
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>
+                            {t(
+                              'Off by default: peer pods run on ordinary VM sizes, like AWS and Google Cloud. Turn it on to run each pod VM inside a hardware TEE — the instance sizes above must then be Confidential VM sizes, and the operator needs a confidential pod VM image. Either way the choice is written to the config map, so it is never left implicit.',
+                            )}
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                  )}
 
                   {provider === 'aws' && (
                     <>
