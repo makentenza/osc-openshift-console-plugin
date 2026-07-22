@@ -34,6 +34,32 @@ describe('kataConfigReadiness', () => {
     expect(r.ready).toBe(false);
   });
 
+  it('carries the InProgress reason through for display', () => {
+    const r = kataConfigReadiness(
+      kc({ conditions: [{ type: 'InProgress', status: 'True', reason: 'WaitingForNodes' }] }),
+    );
+    expect(r.reason).toBe('WaitingForNodes');
+  });
+
+  it('leaves the reason undefined when the operator gave none', () => {
+    expect(kataConfigReadiness(kc({})).reason).toBeUndefined();
+    expect(kataConfigReadiness(undefined).reason).toBeUndefined();
+  });
+
+  // A settled condition keeps its last reason. Pairing that with a phase that is still 'installing'
+  // renders the self-contradicting "Installing (Installed)", so the reason stops at the settle.
+  it('drops the reason once the operator has settled', () => {
+    const r = kataConfigReadiness(
+      kc({
+        conditions: [{ type: 'InProgress', status: 'False', reason: 'Installed' }],
+        kataNodes: { nodeCount: 3, readyNodeCount: 1 },
+        runtimeClasses: [],
+      }),
+    );
+    expect(r.phase).toBe('installing');
+    expect(r.reason).toBeUndefined();
+  });
+
   it('is installing when settled but not every node is ready yet', () => {
     const r = kataConfigReadiness(
       kc({

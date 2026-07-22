@@ -182,7 +182,10 @@ const KataConfigWizard: FC = () => {
         );
       }
       await k8sCreate({ model: KataConfigModel, data: kataConfigManifest });
-      navigate('/sandboxes');
+      // Land on the checklist, not the overview: creating the object only starts a rollout, and the
+      // checklist is the screen that tracks it node by node. Dropping the user on the overview read
+      // as "done" the moment they hit Create (issue #64).
+      navigate('/sandboxes/setup');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
