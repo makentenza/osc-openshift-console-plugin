@@ -24,9 +24,13 @@ const mountOn = (opts: {
   platform?: string;
   peerPodsCm?: Record<string, string>;
   ccoMode?: string;
+  /** Override the Infrastructure watch outright — for the loading and errored cases. */
+  infrastructure?: WatchResult;
+  /** Worker MachineSets, which is where the GCP network name comes from. */
+  machineSets?: unknown[];
 }) => {
   window.__watchResults = {
-    Infrastructure: [
+    Infrastructure: opts.infrastructure ?? [
       {
         status: {
           platform: opts.platform ?? 'AWS',
@@ -38,7 +42,7 @@ const mountOn = (opts: {
     ],
     Node: [[workerNode], true, undefined],
     // An AWS HCP guest cluster has no MachineSets — machine-api lives on the management cluster.
-    MachineSet: [[], true, undefined],
+    MachineSet: [opts.machineSets ?? [], true, undefined],
     'peer-pods-cm': opts.peerPodsCm ? [{ data: opts.peerPodsCm }, true, undefined] : ABSENT,
     ...(opts.ccoMode
       ? { CloudCredential: [{ spec: { credentialsMode: opts.ccoMode } }, true, undefined] }
@@ -191,5 +195,91 @@ describe('OpenPeerPodsFirewall — the fetched security group reaches the comman
     cy.contains('--group-id sg-0fetched').should('exist');
     cy.contains('<sg-xxxxxxxx>').should('not.exist');
     cy.contains('Filled in the security group from your worker instance.').should('exist');
+  });
+});
+
+/*
+ * The provider used to fall back to 'gcp' whenever neither peer-pods-cm nor Infrastructure had
+ * answered — so a non-GCP cluster rendered the gcloud commands and an enabled "Apply in cluster"
+ * while the watch was in flight, and forever if it errored. That button mints a GCP credential.
+ */
+describe('OpenPeerPodsFirewall — before the cloud is known', () => {
+  beforeEach(() => {
+    window.__watchResults = {};
+  });
+
+  const NEUTRAL = 'Open the peer pods communication ports — TCP 15150 (agent) and UDP 9000';
+
+  it('claims no cloud while the Infrastructure watch is loading', () => {
+    mountOn({ infrastructure: [undefined, false, undefined] });
+
+    cy.contains('gcloud compute firewall-rules').should('not.exist');
+    cy.contains('button', 'Apply in cluster').should('not.exist');
+    cy.contains(NEUTRAL).should('exist');
+  });
+
+  it('claims no cloud when the Infrastructure watch errored', () => {
+    mountOn({ infrastructure: [undefined, false, { code: 403 }] });
+
+    cy.contains('gcloud compute firewall-rules').should('not.exist');
+    cy.contains('button', 'Apply in cluster').should('not.exist');
+    cy.contains(NEUTRAL).should('exist');
+  });
+
+  it('shows the GCP flow once the cluster really does report GCP', () => {
+    mountOn({ platform: 'GCP' });
+
+    cy.contains('gcloud compute firewall-rules').should('exist');
+    cy.contains(NEUTRAL).should('not.exist');
+  });
+});
+
+/*
+ * The GCP branch promised "no placeholders to edit" unconditionally, but the project and network
+ * come from Infrastructure and the worker MachineSets — neither guaranteed.
+ */
+describe('OpenPeerPodsFirewall — GCP with values the cluster cannot supply', () => {
+  beforeEach(() => {
+    window.__watchResults = {};
+  });
+
+  const gcpInfra: WatchResult = [
+    { status: { platform: 'GCP', platformStatus: { gcp: { projectID: 'my-project' } } } },
+    true,
+    undefined,
+  ];
+
+  it('does not claim there is nothing to edit, and names what is missing', () => {
+    mountOn({ infrastructure: gcpInfra });
+
+    cy.contains('--network=<network>').should('exist');
+    cy.contains('no placeholders to edit').should('not.exist');
+    cy.contains('Replace the placeholder value(s) before running: <network>.').should('exist');
+  });
+
+  it('explains why Apply in cluster is disabled', () => {
+    mountOn({ infrastructure: gcpInfra });
+
+    cy.contains('button', 'Apply in cluster').should('be.disabled');
+    cy.contains('Apply in cluster needs the project and network').should('exist');
+  });
+
+  it('keeps the original promise when the cluster does supply everything', () => {
+    mountOn({
+      infrastructure: gcpInfra,
+      machineSets: [
+        {
+          spec: {
+            template: {
+              spec: { providerSpec: { value: { networkInterfaces: [{ network: 'my-vpc' }] } } },
+            },
+          },
+        },
+      ],
+    });
+
+    cy.contains('--network=my-vpc').should('exist');
+    cy.contains('no placeholders to edit').should('exist');
+    cy.contains('Replace the placeholder value(s)').should('not.exist');
   });
 });
