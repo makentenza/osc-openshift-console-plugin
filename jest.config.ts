@@ -25,7 +25,12 @@ const config: Config = {
     ],
   },
   setupFilesAfterEnv: ['./setup-tests.ts'],
-  testPathIgnorePatterns: ['integration-tests'],
+  // .claude/worktrees holds full checkouts of this repo, so without this jest collects every spec
+  // twice — inflating the reported test count — and warns that each manual mock is duplicated.
+  // modulePathIgnorePatterns is what keeps them out of the haste map; testPathIgnorePatterns alone
+  // would stop the specs running but not the duplicate-mock warnings.
+  modulePathIgnorePatterns: ['<rootDir>/.claude/'],
+  testPathIgnorePatterns: ['integration-tests', '<rootDir>/.claude/'],
 };
 
 export default config;

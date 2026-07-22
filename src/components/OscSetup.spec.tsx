@@ -81,16 +81,24 @@ const FEATURE_GATES_ABSENT: WatchResult = [undefined, false, { code: 404, messag
 /** Still in flight: neither loaded nor errored. */
 const FEATURE_GATES_LOADING: WatchResult = [undefined, false, null];
 
+/** No peer-pods-cm: a named watch for a missing object 404s rather than loading. */
+const PEER_PODS_CM_ABSENT: WatchResult = [undefined, false, { code: 404, message: 'not found' }];
+
 const setup = (opts: {
   topology?: string;
   infraLoaded?: boolean;
   featureGates?: Record<string, string>;
   featureGatesLoading?: boolean;
   kataConfig?: WatchResult;
+  peerPodsCm?: WatchResult;
 }): void => {
   watches.clear();
-  // peer-pods-cm configured throughout, so the checklist is never blocked on ordering.
-  watches.set('ConfigMap/peer-pods-cm', [{ data: { CLOUD_PROVIDER: 'azure' } }, true, null]);
+  // peer-pods-cm configured unless a test says otherwise, so the install-copy cases below are never
+  // entangled with the ordering advice.
+  watches.set(
+    'ConfigMap/peer-pods-cm',
+    opts.peerPodsCm ?? [{ data: { CLOUD_PROVIDER: 'azure' } }, true, null],
+  );
   watches.set(
     'Infrastructure',
     opts.infraLoaded === false ? [undefined, false, null] : infrastructure(opts.topology),
@@ -201,5 +209,117 @@ describe('OscSetup — KataConfig step install copy', () => {
       });
       expect(copy(/reboot/)).toHaveLength(0);
     });
+  });
+});
+
+/**
+ * The checklist used to hide the Create KataConfig action until peer-pods-cm existed, which forced
+ * peer pods on everyone. On-node sandboxed containers are a valid cloud setup and need no config map
+ * at all, so the ordering constraint is advice now, not a gate (issue #69).
+ */
+describe('OscSetup — creating a KataConfig without peer pods', () => {
+  it('offers Create KataConfig even when no peer pods config map exists', () => {
+    setup({ topology: 'External', peerPodsCm: PEER_PODS_CM_ABSENT });
+
+    expect(screen.getByRole('button', { name: 'Create KataConfig' })).toBeInTheDocument();
+  });
+
+  // The ordering advice is still worth giving — it just must not read as a prerequisite.
+  it('advises on ordering without demanding it, and points at the on-node alternative', () => {
+    setup({ topology: 'External', peerPodsCm: PEER_PODS_CM_ABSENT });
+
+    expect(
+      copy(/Going to use peer pods\? Configure the peer pods config map first/),
+    ).not.toHaveLength(0);
+    expect(copy(/For on-node sandboxed containers you do not need one/)).not.toHaveLength(0);
+  });
+
+  // The step used to promise peer pods outright, contradicting the advice directly below it. All
+  // three install-mode branches word this sentence separately, so all three have to be checked.
+  it.each([
+    ['a rebooting install', { topology: 'HighlyAvailable' }],
+    ['a DaemonSet install', { topology: 'External' }],
+    ['an install whose mode is not known yet', { featureGatesLoading: true }],
+  ])('does not assert peer pods will be enabled — %s', (_case, modeOpts) => {
+    setup({ ...modeOpts, peerPodsCm: PEER_PODS_CM_ABSENT });
+
+    expect(copy(/Install the kata runtime on your workers/)).not.toHaveLength(0);
+    expect(copy(/with peer pods enabled/)).toHaveLength(0);
+  });
+
+  it('drops the advice once the config map is there', () => {
+    setup({ topology: 'External' });
+
+    expect(screen.getByRole('button', { name: 'Create KataConfig' })).toBeInTheDocument();
+    expect(copy(/Going to use peer pods\?/)).toHaveLength(0);
+  });
+
+  // Answering before the watch settles flashed the advice at someone who does have a config map.
+  it('says nothing while the peer-pods-cm watch is still in flight', () => {
+    setup({ topology: 'External', peerPodsCm: [undefined, false, null] });
+
+    expect(copy(/Going to use peer pods\?/)).toHaveLength(0);
+  });
+});
+
+/**
+ * A KataConfig with peer pods off registers only the on-node kata runtime and never gets a pod VM
+ * image. The steps built around peer pods have to say so, or the path #69 opened up leads straight
+ * into instructions that cannot work.
+ */
+describe('OscSetup — an on-node-only KataConfig', () => {
+  /** Installed and ready, with peer pods explicitly off. */
+  const onNodeReady: WatchResult = [
+    [
+      {
+        metadata: { name: 'example-kataconfig' },
+        spec: { enablePeerPods: false },
+        status: {
+          conditions: [{ type: 'InProgress', status: 'False' }],
+          kataNodes: { nodeCount: 2, readyNodeCount: 2 },
+          runtimeClasses: ['kata'],
+        },
+      },
+    ],
+    true,
+    null,
+  ];
+
+  it('names the runtime class the cluster actually registers', () => {
+    setup({ topology: 'External', kataConfig: onNodeReady });
+
+    expect(copy(/runtimeClassName: kata to run it in a microVM on the node/)).not.toHaveLength(0);
+    expect(copy(/kata-remote/)).toHaveLength(0);
+  });
+
+  it('does not promise a pod VM image that will never arrive', () => {
+    setup({ topology: 'External', kataConfig: onNodeReady });
+
+    expect(copy(/there is no pod VM image to build/)).not.toHaveLength(0);
+    expect(copy(/the operator is registering the pod VM image/)).toHaveLength(0);
+  });
+
+  // With peer pods on, the peer-pods wording is right and must stay.
+  it('still speaks of pod VMs when peer pods are on', () => {
+    setup({
+      topology: 'External',
+      kataConfig: [
+        [
+          {
+            metadata: { name: 'example-kataconfig' },
+            spec: { enablePeerPods: true },
+            status: {
+              conditions: [{ type: 'InProgress', status: 'False' }],
+              kataNodes: { nodeCount: 2, readyNodeCount: 2 },
+              runtimeClasses: ['kata-remote'],
+            },
+          },
+        ],
+        true,
+        null,
+      ],
+    });
+
+    expect(copy(/runtimeClassName: kata-remote to run it in a pod VM/)).not.toHaveLength(0);
   });
 });
