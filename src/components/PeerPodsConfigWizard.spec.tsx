@@ -300,3 +300,90 @@ describe('PeerPodsConfigWizard — turning a switch back off', () => {
     expect(written().USE_PUBLIC_IP).toBe('false');
   });
 });
+
+/**
+ * The save merges over the existing config map, so a field the user empties simply kept its old
+ * value — the form read blank while the cluster carried on using the setting, and there was no way
+ * to unset one from the UI.
+ */
+describe('PeerPodsConfigWizard — clearing a field that already has a value', () => {
+  const existingAzure = (data: Record<string, string>): WatchResult => [
+    {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: { name: PEER_PODS_CM, namespace: 'openshift-sandboxed-containers-operator' },
+      data: { CLOUD_PROVIDER: 'azure', ...data },
+    },
+    true,
+    undefined,
+  ];
+
+  beforeEach(() => {
+    window.__watchResults = {};
+    window.__k8sCreateCalls = [];
+    window.__k8sUpdateCalls = [];
+  });
+
+  it('removes the key when the user empties the field', async () => {
+    renderWizard(existingAzure({ AZURE_INSTANCE_SIZES: 'Standard_D2as_v5,Standard_D4as_v5' }));
+
+    await userEvent.clear(screen.getByLabelText('Allowed instance sizes'));
+    await submit('Save');
+
+    expect(written()).not.toHaveProperty('AZURE_INSTANCE_SIZES');
+  });
+
+  it('leaves the other fields alone', async () => {
+    renderWizard(
+      existingAzure({ AZURE_INSTANCE_SIZES: 'Standard_D2as_v5', AZURE_REGION: 'westeurope' }),
+    );
+
+    await userEvent.clear(screen.getByLabelText('Allowed instance sizes'));
+    await submit('Save');
+
+    expect(written().AZURE_REGION).toBe('westeurope');
+    expect(written().CLOUD_PROVIDER).toBe('azure');
+  });
+
+  // Emptying a list to only separators is still emptying it.
+  it('removes the key when the value normalizes to nothing', async () => {
+    renderWizard(existingAzure({ AZURE_INSTANCE_SIZES: 'Standard_D2as_v5' }));
+
+    const field = screen.getByLabelText('Allowed instance sizes');
+    await userEvent.clear(field);
+    await userEvent.type(field, ' , ');
+    await submit('Save');
+
+    expect(written()).not.toHaveProperty('AZURE_INSTANCE_SIZES');
+  });
+
+  /**
+   * The operator writes AZURE_IMAGE_ID after KataConfig runs. It renders as an empty field until
+   * then, which must not be read as the user clearing it — deleting it would throw away the pod VM
+   * image the operator registered.
+   */
+  it('never deletes the image id the operator owns', async () => {
+    renderWizard(existingAzure({ AZURE_IMAGE_ID: '/subscriptions/0000/…/images/podvm' }));
+
+    await submit('Save');
+
+    expect(written().AZURE_IMAGE_ID).toBe('/subscriptions/0000/…/images/podvm');
+  });
+
+  it('keeps an operator-seeded empty image id rather than removing it', async () => {
+    renderWizard(existingAzure({ AZURE_IMAGE_ID: '' }));
+
+    await submit('Save');
+
+    expect(written()).toHaveProperty('AZURE_IMAGE_ID', '');
+  });
+
+  // A key this provider's form does not render is none of its business.
+  it('does not touch keys outside the form', async () => {
+    renderWizard(existingAzure({ SOMETHING_ELSE: 'set-by-hand' }));
+
+    await submit('Save');
+
+    expect(written().SOMETHING_ELSE).toBe('set-by-hand');
+  });
+});
