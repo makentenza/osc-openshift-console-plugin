@@ -166,3 +166,76 @@ describe('PeerPodsConfigWizard — comma-separated allow-lists', () => {
     cy.contains('Comma-separated, no spaces').should('not.exist');
   });
 });
+
+/*
+ * The save merges over the existing config map, so a field the user empties simply kept its old
+ * value — the form read blank while the cluster carried on using the setting (#75).
+ */
+describe('PeerPodsConfigWizard — clearing a field that already has a value', () => {
+  const existingAzure = (data: Record<string, string>): WatchResult => [
+    {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: { name: PEER_PODS_CM, namespace: 'openshift-sandboxed-containers-operator' },
+      data: { CLOUD_PROVIDER: 'azure', ...data },
+    },
+    true,
+    undefined,
+  ];
+
+  beforeEach(resetCalls);
+
+  it('removes the key when the user empties the field', () => {
+    mountWizard(existingAzure({ AZURE_INSTANCE_SIZES: 'Standard_D2as_v5,Standard_D4as_v5' }));
+
+    cy.contains('label', 'Allowed instance sizes')
+      .invoke('attr', 'for')
+      .then((id) => cy.get(`#${id}`).clear());
+    cy.contains('button', 'Save').click();
+
+    cy.wrap(null).should(() => {
+      expect(written()).to.not.have.property('AZURE_INSTANCE_SIZES');
+      // Everything else it already had survives.
+      expect(written().CLOUD_PROVIDER).to.equal('azure');
+    });
+  });
+
+  /**
+   * The operator writes AZURE_IMAGE_ID after KataConfig runs. It renders as an empty field until
+   * then, which must not be read as the user clearing it — that would throw away the pod VM image.
+   */
+  it('never deletes the image id the operator owns', () => {
+    mountWizard(existingAzure({ AZURE_IMAGE_ID: '/subscriptions/0000/images/podvm' }));
+
+    cy.contains('button', 'Save').click();
+
+    cy.wrap(null).should(() => {
+      expect(written().AZURE_IMAGE_ID).to.equal('/subscriptions/0000/images/podvm');
+    });
+  });
+
+  /**
+   * The seeded-empty case is the one that actually exercises the guard: a non-empty value is
+   * written back through the form anyway, so only an empty one can be mistaken for "user cleared".
+   */
+  it('keeps an operator-seeded empty image id rather than removing it', () => {
+    mountWizard(existingAzure({ AZURE_IMAGE_ID: '' }));
+
+    cy.contains('button', 'Save').click();
+
+    cy.wrap(null).should(() => {
+      expect(written()).to.have.property('AZURE_IMAGE_ID', '');
+    });
+  });
+
+  // A key this provider's form does not render is none of its business.
+  it('does not touch keys outside the form', () => {
+    mountWizard(existingAzure({ SOMETHING_ELSE: 'set-by-hand' }));
+
+    cy.contains('button', 'Save').click();
+
+    cy.wrap(null).should(() => {
+      expect(written().SOMETHING_ELSE).to.equal('set-by-hand');
+    });
+  });
+});
