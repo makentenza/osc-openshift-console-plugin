@@ -126,7 +126,7 @@ const PodvmImageTroubleshoot: FC = () => {
 const OscSetup: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [kataConfig] = useKataConfig();
-  const [peerPodsCm] = usePeerPodsCm();
+  const [peerPodsCm, peerPodsCmSettled] = usePeerPodsCm();
   const platform = useClusterPlatform();
   const [firewallOpened] = useFirewallOpened();
   // How the operator installs the runtime here — DaemonSet installs live, MachineConfig drains and
@@ -141,12 +141,18 @@ const OscSetup: FC = () => {
   const kata = kataConfigReadiness(kataConfig);
   const podvmImageName = ppData.PODVM_IMAGE_NAME ?? ppData.PODVM_AMI_ID ?? ppData.AZURE_IMAGE_ID;
 
-  // peer-pods-cm must exist *before* KataConfig: the operator reads it while reconciling, and a
-  // KataConfig created first comes up without peer pods wired and has to be recreated. This template
-  // installs the kata-remote (peer pods) runtime, so gate the Create-KataConfig CTA until
-  // peer-pods-cm is configured (issue: peer-pods-cm ordering). Once KataConfig exists the order no
-  // longer matters, so only guard while it's still absent.
-  const blockedOnPeerPodsCm = kata.phase === 'absent' && !ppConfigured;
+  // peer-pods-cm must exist *before* KataConfig if you want peer pods: the operator reads it while
+  // reconciling, and a KataConfig created first comes up without peer pods wired and has to be
+  // recreated. That used to hide the Create-KataConfig CTA outright, which forced peer pods on
+  // everyone — but on-node sandboxed containers are a valid cloud setup and need no config map at
+  // all (issue #69). Advise instead of blocking; the wizard's own peer pods switch is where the
+  // choice is made, and it warns there. Once KataConfig exists the order no longer matters.
+  // Only once the watch has settled — a named watch for a missing object 404s rather than loading,
+  // so answering early flashed the advice at someone who does have a config map.
+  const peerPodsCmMissing = peerPodsCmSettled && kata.phase === 'absent' && !ppConfigured;
+  // A KataConfig exists and turned peer pods off: this cluster registers only the on-node kata
+  // runtime and never gets a pod VM image, so the steps built around peer pods must say so (#69).
+  const onNodeOnly = kata.phase !== 'absent' && !peerPodsEnabled;
   // A node-count-aware estimate while KataConfig is rolling out.
   const installingNodeCount = kata.totalNodes > 0 ? kata.totalNodes : undefined;
 
@@ -155,14 +161,14 @@ const OscSetup: FC = () => {
   const createKataDetail = (): string =>
     willReboot === true
       ? t(
-          'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. Each node reboots to install it, so this takes a few minutes.',
+          'Install the kata runtime on your workers by creating a KataConfig. Each node reboots to install it, so this takes a few minutes.',
         )
       : willReboot === false
         ? t(
-            'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. A DaemonSet installs it live, without draining or rebooting nodes, so this takes a few minutes.',
+            'Install the kata runtime on your workers by creating a KataConfig. A DaemonSet installs it live, without draining or rebooting nodes, so this takes a few minutes.',
           )
         : t(
-            'Install the kata runtime on your workers by creating a KataConfig with peer pods enabled. This takes a few minutes.',
+            'Install the kata runtime on your workers by creating a KataConfig. This takes a few minutes.',
           );
 
   // The same distinction while it rolls out — a reboot window is a much longer wait than a
@@ -234,11 +240,11 @@ const OscSetup: FC = () => {
         kata.phase === 'absent' ? (
           <>
             {createKataDetail()}
-            {blockedOnPeerPodsCm && (
+            {peerPodsCmMissing && (
               <div className="osc-openshift-console-plugin__mt">
-                <ExclamationTriangleIcon className="osc-openshift-console-plugin__icon-warning" />{' '}
+                <InfoCircleIcon className="osc-openshift-console-plugin__icon-info" />{' '}
                 {t(
-                  'Configure the peer pods config map first. The operator reads peer-pods-cm while installing KataConfig — creating KataConfig before it means recreating KataConfig later.',
+                  'Going to use peer pods? Configure the peer pods config map first — the operator reads peer-pods-cm while installing KataConfig, so creating KataConfig before it means recreating it later. For on-node sandboxed containers you do not need one; turn off Enable peer pods in the wizard.',
                 )}
               </div>
             )}
@@ -310,9 +316,8 @@ const OscSetup: FC = () => {
             )}
           </>
         ),
-      // Gate the CTA until peer-pods-cm exists so users can't create KataConfig in the wrong order.
       action:
-        kata.phase === 'absent' && !blockedOnPeerPodsCm
+        kata.phase === 'absent'
           ? { label: t('Create KataConfig'), href: '/sandboxes/setup/kataconfig' }
           : undefined,
     },
@@ -320,8 +325,12 @@ const OscSetup: FC = () => {
       title: t('Pod VM image'),
       // The operator builds and registers the pod VM image itself once KataConfig installs — there
       // is no manual build step. Just surface the image it generated (issue #7).
-      status: podvmImageName ? 'done' : 'info',
-      detail: podvmImageName ? (
+      status: onNodeOnly || podvmImageName ? 'done' : 'info',
+      detail: onNodeOnly ? (
+        t(
+          'Not needed — this KataConfig runs sandboxed containers on the node itself, so there is no pod VM image to build.',
+        )
+      ) : podvmImageName ? (
         <>
           <span className="osc-openshift-console-plugin__mono">{podvmImageName}</span>
           <div className="osc-openshift-console-plugin__muted osc-openshift-console-plugin__mt">
@@ -347,10 +356,14 @@ const OscSetup: FC = () => {
       title: t('Run a sandboxed workload'),
       // Only offer this once the runtime is genuinely ready — not just because the object exists.
       status: kata.ready ? 'info' : 'todo',
+      // Name the runtime class this cluster actually registers: a KataConfig with peer pods off
+      // installs only kata, so telling that user to ask for kata-remote sends them nowhere (#69).
       detail: kata.ready
-        ? t('Deploy a workload with runtimeClassName: kata-remote to run it in a pod VM.')
+        ? onNodeOnly
+          ? t('Deploy a workload with runtimeClassName: kata to run it in a microVM on the node.')
+          : t('Deploy a workload with runtimeClassName: kata-remote to run it in a pod VM.')
         : kata.phase === 'absent'
-          ? t('Available once the KataConfig install completes and kata-remote is registered.')
+          ? t('Available once the KataConfig install completes and the runtime is registered.')
           : t('Waiting for the kata runtime to finish installing before workloads can run.'),
       action: kata.ready
         ? { label: t('Create workload'), href: '/sandboxes/workloads/~new' }
