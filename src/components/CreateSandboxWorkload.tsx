@@ -71,6 +71,7 @@ import {
   suggestWorkloadName,
   workloadNameExists,
 } from '../utils/workload';
+import { parseCsvList } from '../utils/csv';
 import { fromYaml, toYaml } from '../utils/yaml';
 import { IsolationLabel } from './IsolationLabel';
 import { NamespaceSelect } from './NamespaceSelect';
@@ -254,11 +255,7 @@ const CreateSandboxWorkload: FC = () => {
   const allowedInstanceTypes = [
     peerPodsCm?.data?.PODVM_INSTANCE_TYPES,
     peerPodsCm?.data?.AZURE_INSTANCE_SIZES,
-  ]
-    .filter((s): s is string => Boolean(s))
-    .flatMap((s) => s.split(','))
-    .map((s) => s.trim())
-    .filter(Boolean);
+  ].flatMap((s) => parseCsvList(s));
   const instanceTypeOptions = Array.from(
     new Set([...(defaultMachineType ? [defaultMachineType] : []), ...allowedInstanceTypes]),
   );

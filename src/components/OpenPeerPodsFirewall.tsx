@@ -15,13 +15,14 @@ import {
   CodeBlockAction,
   CodeBlockCode,
   Content,
+  ExpandableSection,
   Flex,
   FlexItem,
   Label,
   Spinner,
 } from '@patternfly/react-core';
 import type { FC } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   CLOUD_CREDENTIAL_NAMESPACE,
@@ -43,13 +44,15 @@ import {
   setFirewallOpened,
   useAwsNetworking,
   useCcoMode,
-  useClusterPlatform,
   useCloudNetworking,
   useFirewallOpened,
   useGcpNetworking,
   usePeerPodsCm,
+  usePeerPodsProvider,
 } from '../k8s/setup';
-import { buildFirewallCommand, type FirewallProvider } from '../utils/firewall';
+import { AWS_DESCRIBE_CLI } from '../utils/awsCli';
+import { buildAwsFirewallCommand } from '../utils/firewall';
+import FetchAwsNetworking, { type AwsNetworkingResult } from './FetchAwsNetworking';
 import './sandbox.css';
 
 const WORKER_LABEL = 'node-role.kubernetes.io/worker';
@@ -137,7 +140,6 @@ type RangesKind = 'internal' | 'external' | 'nat' | 'none';
 const OpenPeerPodsFirewall: FC = () => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [peerPodsCm] = usePeerPodsCm();
-  const platform = useClusterPlatform();
   const gcp = useGcpNetworking();
   const [nodes] = useK8sWatchResource<NodeKind[]>({ groupVersionKind: NodeGVK, isList: true });
 
@@ -147,10 +149,19 @@ const OpenPeerPodsFirewall: FC = () => {
   // the in-cluster "Apply" flow can't work — disable it up front instead of timing out (§ CCO mode).
   const ccoManual = useCcoMode() === 'Manual';
   const pp = peerPodsCm?.data ?? {};
-  // Normalize the provider from peer-pods-cm first (it's what the cloud-api-adaptor actually uses),
-  // then the cluster platform (AWS/Azure/GCP/…), defaulting to GCP for the existing one-click flow.
-  const provider = (pp.CLOUD_PROVIDER ?? (platform ? platform.toLowerCase() : 'gcp')).toLowerCase();
+  const provider = usePeerPodsProvider();
   const isGcp = provider === 'gcp';
+
+  // Security group ids resolved by "Fetch from AWS". The cluster can't always tell us: IPI
+  // MachineSets reference the group by tag rather than id, and a hosted (HCP) cluster has no
+  // MachineSets at all — its machine-api lives on the management cluster — so on AWS HCP there is
+  // nothing in-cluster to read and the id was left as an unresolvable placeholder (issue #63).
+  const [fetchedSgIds, setFetchedSgIds] = useState<string | undefined>();
+  const [awsCliOpen, setAwsCliOpen] = useState(false);
+  // Stable: FetchAwsNetworking keeps this in an effect's dependency list.
+  const onAwsFetched = useCallback((r: AwsNetworkingResult) => {
+    if (r.sgIds) setFetchedSgIds(r.sgIds);
+  }, []);
 
   // The pod VMs live wherever peer-pods-cm points them (which can differ from the cluster's own
   // VPC); fall back to the cluster networking inferred from the worker MachineSets.
@@ -387,43 +398,97 @@ const OpenPeerPodsFirewall: FC = () => {
     }
   };
 
-  // AWS/Azure: no in-cluster apply, but render a fully-resolved copy-paste CLI — every value we can
-  // read from the cluster (peer-pods-cm + Infrastructure) is filled in; the rest are clear
-  // <placeholders> the user edits before running.
-  if (provider === 'aws' || provider === 'azure') {
-    const fwProvider: FirewallProvider = provider;
+  // Azure needs no rule of its own: the platform's default AllowVnetInBound security rule already
+  // permits worker→pod-VM traffic inside the cluster VNet, so the command the plugin used to render
+  // was a no-op on every cluster we have seen. Only a custom NSG that restricts intra-VNet traffic
+  // blocks it, and that is the user's own rule to relax — state the ports and leave it to them
+  // rather than hand out a command nobody needs to run (issue #67).
+  if (provider === 'azure') {
+    return (
+      <Content component="p" className="osc-openshift-console-plugin__muted">
+        {t(
+          'No action needed on Azure — peer pods reach the pod VMs over the cluster VNet, which the default network security group already allows. Only if you have restricted intra-VNet traffic with your own NSG rules, allow TCP 15150 (kata agent) and UDP 9000 (VXLAN tunnel) from your workers to the pod VM subnet.',
+        )}
+      </Content>
+    );
+  }
+
+  // AWS: no in-cluster apply, but render a fully-resolved copy-paste CLI — every value we can read
+  // from the cluster (peer-pods-cm + Infrastructure) is filled in; the rest are clear <placeholders>
+  // the user edits before running.
+  if (provider === 'aws') {
     // AWS_SG_IDS may be a comma-separated list; the rule targets the pod VM SG, so use the first.
-    // Before peer-pods-cm exists, fall back to the worker MachineSet's security group when literal.
-    const awsSg = pp.AWS_SG_IDS?.split(',')[0]?.trim() || awsNet.securityGroupId;
-    const { command: cliCommand, placeholders } = buildFirewallCommand(fwProvider, {
-      region:
-        provider === 'aws' ? (pp.AWS_REGION ?? cloud.region ?? awsNet.region) : pp.AZURE_REGION,
-      awsSecurityGroupId: awsSg,
-      azureResourceGroup: pp.AZURE_RESOURCE_GROUP ?? cloud.azureResourceGroup,
-      azureNsgName: pp.AZURE_NSG_ID,
+    // Before peer-pods-cm exists, fall back to the worker MachineSet's security group when literal,
+    // and then to whatever "Fetch from AWS" resolved off the worker instance.
+    const awsSg =
+      pp.AWS_SG_IDS?.split(',')[0]?.trim() ||
+      awsNet.securityGroupId ||
+      fetchedSgIds?.split(',')[0]?.trim();
+    const { command: cliCommand, placeholders } = buildAwsFirewallCommand({
+      region: pp.AWS_REGION ?? cloud.region ?? awsNet.region,
+      securityGroupId: awsSg,
     });
     return (
       <>
         <Content component="p" className="osc-openshift-console-plugin__muted">
-          {provider === 'azure'
-            ? t(
-                'On Azure, peer pods reach the pod VMs over the cluster VNet, which the default network security group already allows — so this step is usually not required. Run the command below only if you have restricted intra-VNet traffic (custom NSG rules). It opens ports 15150 and 9000, filled in from your cluster.',
-              )
-            : t(
-                'Open the peer pods communication ports (15150 and 9000) so your worker nodes can reach the pod VMs. The command below is filled in from your cluster — run it in your cloud CLI.',
-              )}
+          {t(
+            'Open the peer pods communication ports (15150 and 9000) so your worker nodes can reach the pod VMs. The command below is filled in from your cluster — run it in your cloud CLI.',
+          )}
         </Content>
         <CommandBlock command={cliCommand} />
+        {/* Nothing in the cluster carries the security group id — offer to read it off the worker
+            instance rather than send the user hunting for it (issue #63). */}
+        {provider === 'aws' && !awsSg && (
+          <>
+            <FetchAwsNetworking region={pp.AWS_REGION} onFetched={onAwsFetched} />
+            <ExpandableSection
+              className="osc-openshift-console-plugin__mt"
+              toggleText={t('Find the security group ID with the AWS CLI')}
+              isExpanded={awsCliOpen}
+              onToggle={(_e, x) => {
+                setAwsCliOpen(x);
+              }}
+            >
+              <CodeBlock>
+                <CodeBlockCode>{AWS_DESCRIBE_CLI}</CodeBlockCode>
+              </CodeBlock>
+            </ExpandableSection>
+          </>
+        )}
+        {fetchedSgIds && (
+          <Alert
+            variant="success"
+            isInline
+            isPlain
+            className="osc-openshift-console-plugin__mt"
+            title={t('Filled in the security group from your worker instance.')}
+          />
+        )}
         {placeholders.length > 0 && (
           <Alert
             variant="warning"
             isInline
             isPlain
             className="osc-openshift-console-plugin__mt"
-            title={t(
-              'Replace the placeholder value(s) before running: {{placeholders}}. Find them in your peer-pods config map or cloud console.',
-              { placeholders: placeholders.join(', ') },
-            )}
+            title={
+              provider !== 'aws' || awsSg
+                ? t(
+                    'Replace the placeholder value(s) before running: {{placeholders}}. Find them in your peer pods config map or cloud console.',
+                    { placeholders: placeholders.join(', ') },
+                  )
+                : // Manual-mode CCO (STS) can't mint a credential, so Fetch from AWS is disabled —
+                  // the usual case on AWS HCP/ROSA. Point at the CLI it leaves as the way through
+                  // rather than at a button the user cannot press.
+                  ccoManual
+                  ? t(
+                      'Replace the placeholder value(s) before running: {{placeholders}}. Your cluster uses manually-managed credentials, so the plugin cannot read the security group for you — use the AWS CLI above to find it.',
+                      { placeholders: placeholders.join(', ') },
+                    )
+                  : t(
+                      'Replace the placeholder value(s) before running: {{placeholders}}. Use Fetch from AWS above to read the security group off a worker instance — your cluster does not store it.',
+                      { placeholders: placeholders.join(', ') },
+                    )
+            }
           />
         )}
       </>

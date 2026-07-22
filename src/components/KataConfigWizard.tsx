@@ -44,7 +44,7 @@ import {
   NodeGVK,
   NodeModel,
 } from '../k8s/resources';
-import { useControlPlaneTopology } from '../k8s/setup';
+import { useControlPlaneTopology, usePeerPodsCm } from '../k8s/setup';
 import type { NodeKind } from '../k8s/types';
 import {
   DAEMONSET_FALLBACK,
@@ -98,6 +98,11 @@ const KataConfigWizard: FC = () => {
   // is no in-cluster MachineConfig Operator, so kata must install via DaemonSet (no node reboots).
   const topology = useControlPlaneTopology();
   const isHosted = isHostedTopology(topology);
+
+  // Absent only once the watch has settled — a named watch for a missing object 404s rather than
+  // loading, so answering early would flash the warning at someone who does have a config map.
+  const [peerPodsCm, peerPodsCmSettled] = usePeerPodsCm();
+  const peerPodsCmMissing = peerPodsCmSettled && !peerPodsCm?.data?.CLOUD_PROVIDER;
 
   // A hand-picked node set is targeted by labeling those nodes and selecting on that label.
   const useSpecificNodes = nodeMode === 'specific' && selectedNodes.length > 0;
@@ -177,7 +182,10 @@ const KataConfigWizard: FC = () => {
         );
       }
       await k8sCreate({ model: KataConfigModel, data: kataConfigManifest });
-      navigate('/sandboxes');
+      // Land on the checklist, not the overview: creating the object only starts a rollout, and the
+      // checklist is the screen that tracks it node by node. Dropping the user on the overview read
+      // as "done" the moment they hit Create (issue #64).
+      navigate('/sandboxes/setup');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -254,11 +262,36 @@ const KataConfigWizard: FC = () => {
                       <HelperText>
                         <HelperTextItem>
                           {t(
-                            'Required on clouds without nested virtualization (e.g. most GCP/AWS/Azure). Create the peer-pods-cm before this KataConfig. It installs both runtime classes — kata-remote (peer pods) and kata (on-node) — so one cluster can run either, chosen per workload by its runtimeClassName.',
+                            'Required on clouds without nested virtualization (e.g. most GCP/AWS/Azure). It installs both runtime classes — kata-remote (peer pods) and kata (on-node) — so one cluster can run either, chosen per workload by its runtimeClassName. Turn it off to install only the on-node runtime, which needs no peer pods config map.',
                           )}
                         </HelperTextItem>
                       </HelperText>
                     </FormHelperText>
+                    {/* The ordering constraint only binds when peer pods are actually wanted, so it
+                        belongs here rather than as a blanket block on creating a KataConfig at
+                        all (issue #69). Warn, don't stop — the user may be about to create the
+                        config map in another tab, or may know exactly what recreating costs. */}
+                    {enablePeerPods && peerPodsCmMissing && (
+                      <Alert
+                        variant="warning"
+                        isInline
+                        title={t('No peer pods config map yet')}
+                        className="osc-openshift-console-plugin__mt"
+                      >
+                        {t(
+                          'The operator reads peer-pods-cm while installing this KataConfig, so create it first — otherwise the runtime comes up without peer pods wired and the KataConfig has to be recreated.',
+                        )}{' '}
+                        <Button
+                          variant="link"
+                          isInline
+                          onClick={() => {
+                            void navigate('/sandboxes/setup/peer-pods');
+                          }}
+                        >
+                          {t('Configure peer pods')}
+                        </Button>
+                      </Alert>
+                    )}
                   </FormGroup>
 
                   <FormGroup label={t('Deployment mode')} fieldId="kc-deploymode">

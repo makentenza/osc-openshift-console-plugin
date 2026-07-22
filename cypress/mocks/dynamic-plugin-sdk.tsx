@@ -31,6 +31,8 @@ declare global {
     __watchResults?: Record<string, WatchResult>;
     __k8sCreateCalls?: unknown[];
     __k8sUpdateCalls?: unknown[];
+    __consoleFetchText?: (url: string) => string;
+    __k8sGetFound?: boolean;
     __k8sDeleteCalls?: unknown[];
     __k8sPatchCalls?: unknown[];
   }
@@ -96,5 +98,21 @@ export const k8sPatch = (payload: unknown): Promise<unknown> => {
  * feature-gate merge), never on mount. Reject as not-found so anything that does call it takes its
  * absent-resource path rather than hanging on a promise that never settles.
  */
+/**
+ * Rejects 404 by default, which is what most create-forms want (the resource is absent, so they
+ * take their create path). Tests that need a resource to exist — e.g. the CCO-minted secret the
+ * "Fetch from AWS" flow waits on — set `window.__k8sGetFound` to resolve instead.
+ */
 export const k8sGet = (): Promise<unknown> =>
-  Promise.reject(Object.assign(new Error('not found'), { code: 404 }));
+  window.__k8sGetFound
+    ? Promise.resolve({})
+    : Promise.reject(Object.assign(new Error('not found'), { code: 404 }));
+
+/**
+ * The console's authenticated fetch, used by FetchAwsNetworking to read the describe Job's pod log.
+ * Tests drive it through `window.__consoleFetchText`; unset means "no log yet".
+ */
+export const consoleFetchText = (url: string): Promise<string> =>
+  window.__consoleFetchText
+    ? Promise.resolve(window.__consoleFetchText(url))
+    : Promise.reject(new Error('no log'));

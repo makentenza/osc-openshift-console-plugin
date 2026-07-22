@@ -46,10 +46,17 @@ const mountSetup = (opts: {
   featureGates?: Record<string, string>;
   featureGatesLoading?: boolean;
   kataConfig?: WatchResult;
+  peerPodsCm?: WatchResult;
+  cloudProvider?: string;
 }) => {
   window.__watchResults = {
-    // peer-pods-cm configured throughout, so the checklist is never blocked on ordering.
-    'peer-pods-cm': [{ data: { CLOUD_PROVIDER: 'azure' } }, true, undefined],
+    // peer-pods-cm configured unless a test says otherwise, so the install-copy cases are never
+    // entangled with the ordering advice.
+    'peer-pods-cm': opts.peerPodsCm ?? [
+      { data: { CLOUD_PROVIDER: opts.cloudProvider ?? 'azure' } },
+      true,
+      undefined,
+    ],
     // Keyed by Kind: CloudCredential is also named `cluster`.
     Infrastructure:
       opts.infraLoaded === false ? [undefined, false, undefined] : infrastructure(opts.topology),
@@ -164,5 +171,100 @@ describe('OscSetup — KataConfig step install copy', () => {
 
       cy.contains('reboot').should('not.exist');
     });
+  });
+});
+
+/** No peer-pods-cm: a named watch for a missing object 404s rather than loading. */
+const PEER_PODS_CM_ABSENT: WatchResult = [undefined, false, { code: 404, message: 'not found' }];
+
+/*
+ * The checklist used to hide the Create KataConfig action until peer-pods-cm existed, forcing peer
+ * pods on everyone. On-node sandboxed containers are a valid cloud setup and need no config map, so
+ * the ordering constraint is advice now, not a gate (issue #69).
+ */
+describe('OscSetup — creating a KataConfig without peer pods', () => {
+  beforeEach(() => {
+    window.__watchResults = {};
+  });
+
+  it('offers Create KataConfig even when no peer pods config map exists', () => {
+    mountSetup({ topology: 'External', peerPodsCm: PEER_PODS_CM_ABSENT });
+
+    cy.contains('button', 'Create KataConfig').should('be.visible');
+  });
+
+  it('advises on ordering without demanding it, and points at the on-node alternative', () => {
+    mountSetup({ topology: 'External', peerPodsCm: PEER_PODS_CM_ABSENT });
+
+    cy.contains('Going to use peer pods? Configure the peer pods config map first').should('exist');
+    cy.contains('For on-node sandboxed containers you do not need one').should('exist');
+    // The step used to promise peer pods outright, contradicting the advice below it.
+    cy.contains('with peer pods enabled').should('not.exist');
+  });
+
+  it('drops the advice once the config map is there', () => {
+    mountSetup({ topology: 'External' });
+
+    cy.contains('button', 'Create KataConfig').should('be.visible');
+    cy.contains('Going to use peer pods?').should('not.exist');
+  });
+});
+
+/*
+ * A KataConfig with peer pods off registers only the on-node kata runtime and never gets a pod VM
+ * image, so the steps built around peer pods have to say so (issue #69).
+ */
+describe('OscSetup — an on-node-only KataConfig', () => {
+  const onNodeReady: WatchResult = [
+    [
+      {
+        metadata: { name: 'example-kataconfig' },
+        spec: { enablePeerPods: false },
+        status: {
+          conditions: [{ type: 'InProgress', status: 'False' }],
+          kataNodes: { nodeCount: 2, readyNodeCount: 2 },
+          runtimeClasses: ['kata'],
+        },
+      },
+    ],
+    true,
+    undefined,
+  ];
+
+  beforeEach(() => {
+    window.__watchResults = {};
+  });
+
+  it('names the runtime class the cluster actually registers', () => {
+    mountSetup({ topology: 'External', kataConfig: onNodeReady });
+
+    cy.contains('runtimeClassName: kata to run it in a microVM on the node').should('exist');
+    cy.contains('kata-remote').should('not.exist');
+  });
+
+  it('does not promise a pod VM image that will never arrive', () => {
+    mountSetup({ topology: 'External', kataConfig: onNodeReady });
+
+    cy.contains('there is no pod VM image to build').should('exist');
+  });
+});
+
+/* Only GCP has the in-cluster Apply flow, so only GCP should hear about it (issue #63). */
+describe('OscSetup — "mark firewall as done" hint', () => {
+  beforeEach(() => {
+    window.__watchResults = {};
+  });
+
+  it('does not mention GCP on an AWS cluster', () => {
+    mountSetup({ topology: 'External', cloudProvider: 'aws' });
+
+    cy.contains('Tick this once you have opened the firewall ports').should('exist');
+    cy.contains('GCP').should('not.exist');
+  });
+
+  it('still points GCP users at the in-cluster apply action', () => {
+    mountSetup({ topology: 'HighlyAvailable', cloudProvider: 'gcp' });
+
+    cy.contains('The "Apply in cluster" action above ticks it for you.').should('exist');
   });
 });

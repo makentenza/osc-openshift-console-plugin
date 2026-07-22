@@ -42,6 +42,16 @@ export default tseslint.config(
     }
   },
   {
+    // The src/**/*.spec.ts unit tests are carried from the 4.22 branch so the two stay
+    // cherry-pick-compatible. This branch has no jest runner, so they never execute here — but they
+    // are still linted, and without jest's globals every describe/it/expect is an undefined symbol.
+    // Declaring them is enough; eslint-plugin-jest is a 4.22-only dependency.
+    files: ['src/**/*.spec.{ts,tsx}'],
+    languageOptions: {
+      globals: globals.jest,
+    },
+  },
+  {
     files: ['integration-tests/**/*.{ts,tsx,js}'],
     ...cypress.configs.recommended,
     languageOptions: {
