@@ -49,7 +49,7 @@ import {
   useGcpNetworking,
   usePeerPodsCm,
 } from '../k8s/setup';
-import { buildFirewallCommand, type FirewallProvider } from '../utils/firewall';
+import { buildAwsFirewallCommand } from '../utils/firewall';
 import './sandbox.css';
 
 const WORKER_LABEL = 'node-role.kubernetes.io/worker';
@@ -387,31 +387,38 @@ const OpenPeerPodsFirewall: FC = () => {
     }
   };
 
-  // AWS/Azure: no in-cluster apply, but render a fully-resolved copy-paste CLI — every value we can
-  // read from the cluster (peer-pods-cm + Infrastructure) is filled in; the rest are clear
-  // <placeholders> the user edits before running.
-  if (provider === 'aws' || provider === 'azure') {
-    const fwProvider: FirewallProvider = provider;
+  // Azure needs no rule of its own: the platform's default AllowVnetInBound security rule already
+  // permits worker→pod-VM traffic inside the cluster VNet, so the command the plugin used to render
+  // was a no-op on every cluster we have seen. Only a custom NSG that restricts intra-VNet traffic
+  // blocks it, and that is the user's own rule to relax — state the ports and leave it to them
+  // rather than hand out a command nobody needs to run (issue #67).
+  if (provider === 'azure') {
+    return (
+      <Content component="p" className="osc-openshift-console-plugin__muted">
+        {t(
+          'No action needed on Azure — peer pods reach the pod VMs over the cluster VNet, which the default network security group already allows. Only if you have restricted intra-VNet traffic with your own NSG rules, allow TCP 15150 (kata agent) and UDP 9000 (VXLAN tunnel) from your workers to the pod VM subnet.',
+        )}
+      </Content>
+    );
+  }
+
+  // AWS: no in-cluster apply, but render a fully-resolved copy-paste CLI — every value we can read
+  // from the cluster (peer-pods-cm + Infrastructure) is filled in; the rest are clear <placeholders>
+  // the user edits before running.
+  if (provider === 'aws') {
     // AWS_SG_IDS may be a comma-separated list; the rule targets the pod VM SG, so use the first.
     // Before peer-pods-cm exists, fall back to the worker MachineSet's security group when literal.
     const awsSg = pp.AWS_SG_IDS?.split(',')[0]?.trim() || awsNet.securityGroupId;
-    const { command: cliCommand, placeholders } = buildFirewallCommand(fwProvider, {
-      region:
-        provider === 'aws' ? (pp.AWS_REGION ?? cloud.region ?? awsNet.region) : pp.AZURE_REGION,
-      awsSecurityGroupId: awsSg,
-      azureResourceGroup: pp.AZURE_RESOURCE_GROUP ?? cloud.azureResourceGroup,
-      azureNsgName: pp.AZURE_NSG_ID,
+    const { command: cliCommand, placeholders } = buildAwsFirewallCommand({
+      region: pp.AWS_REGION ?? cloud.region ?? awsNet.region,
+      securityGroupId: awsSg,
     });
     return (
       <>
         <Content component="p" className="osc-openshift-console-plugin__muted">
-          {provider === 'azure'
-            ? t(
-                'On Azure, peer pods reach the pod VMs over the cluster VNet, which the default network security group already allows — so this step is usually not required. Run the command below only if you have restricted intra-VNet traffic (custom NSG rules). It opens ports 15150 and 9000, filled in from your cluster.',
-              )
-            : t(
-                'Open the peer pods communication ports (15150 and 9000) so your worker nodes can reach the pod VMs. The command below is filled in from your cluster — run it in your cloud CLI.',
-              )}
+          {t(
+            'Open the peer pods communication ports (15150 and 9000) so your worker nodes can reach the pod VMs. The command below is filled in from your cluster — run it in your cloud CLI.',
+          )}
         </Content>
         <CommandBlock command={cliCommand} />
         {placeholders.length > 0 && (

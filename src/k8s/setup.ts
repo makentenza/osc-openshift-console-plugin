@@ -203,33 +203,23 @@ export const useCcoMode = (): string | undefined => {
   return cc?.spec?.credentialsMode;
 };
 
-/** Cloud-provider facts the AWS/Azure firewall CLI needs, read best-effort from the cluster. */
+/** Cloud-provider facts the AWS firewall CLI needs, read best-effort from the cluster. */
 export interface CloudNetworking {
-  /** AWS region from Infrastructure.status.platformStatus.aws (Azure's isn't exposed here). */
+  /** AWS region from Infrastructure.status.platformStatus.aws. */
   region?: string;
-  /** Azure resource group that owns the network (falls back to the cluster resource group). */
-  azureResourceGroup?: string;
 }
 
 /**
- * Best-effort cloud networking facts for the firewall step. Only the values the cloud APIs expose
- * cluster-side are filled in (region, Azure network resource group); identifiers the cluster never
- * stores — the AWS security group / VPC, the Azure NSG name — stay undefined so the UI can mark them
- * as placeholders the user must supply.
+ * Best-effort cloud networking facts for the firewall step. Only the region is exposed cluster-side;
+ * identifiers the cluster never stores — the AWS security group / VPC — stay undefined so the UI can
+ * mark them as placeholders the user must supply.
  */
 export const useCloudNetworking = (): CloudNetworking => {
   const [infra] = useK8sWatchResource<InfrastructureKind>({
     groupVersionKind: InfrastructureGVK,
     name: 'cluster',
   });
-  return useMemo(() => {
-    const ps = infra?.status?.platformStatus;
-    return {
-      // Only AWS exposes its region here; Azure carries the resource group instead.
-      region: ps?.aws?.region,
-      azureResourceGroup: ps?.azure?.networkResourceGroupName ?? ps?.azure?.resourceGroupName,
-    };
-  }, [infra]);
+  return useMemo(() => ({ region: infra?.status?.platformStatus?.aws?.region }), [infra]);
 };
 
 export interface GcpNetworking {
