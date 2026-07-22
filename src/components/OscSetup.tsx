@@ -32,6 +32,7 @@ import {
   useClusterPlatform,
   useFirewallOpened,
   usePeerPodsCm,
+  usePeerPodsProvider,
   useResolvedDeploymentMode,
 } from '../k8s/setup';
 import { KataConfigGVK, OSC_NAMESPACE, PODVM_IMAGE_JOB } from '../k8s/resources';
@@ -65,7 +66,7 @@ const StatusIcon: FC<{ status: Status }> = ({ status }) => {
  * keeps the checklist consistent with every other step (issue #13). Persisted in-cluster via the
  * setup ConfigMap, so it's shared across admins and survives reloads.
  */
-const FirewallDoneToggle: FC<{ opened: boolean }> = ({ opened }) => {
+const FirewallDoneToggle: FC<{ opened: boolean; isGcp: boolean }> = ({ opened, isGcp }) => {
   const { t } = useTranslation('plugin__osc-openshift-console-plugin');
   const [busy, setBusy] = useState(false);
   const toggle = async (checked: boolean) => {
@@ -84,9 +85,16 @@ const FirewallDoneToggle: FC<{ opened: boolean }> = ({ opened }) => {
       isDisabled={busy}
       onChange={(_e, checked) => void toggle(checked)}
       label={t('Mark this step as done')}
-      description={t(
-        'Tick this once you have opened the firewall ports in your cloud — it turns the step green. The GCP "Apply in cluster" action ticks it for you.',
-      )}
+      // Only GCP has the in-cluster apply flow, so only GCP should hear about it (issue #63).
+      description={
+        isGcp
+          ? t(
+              'Tick this once you have opened the firewall ports in your cloud — it turns the step green. The "Apply in cluster" action above ticks it for you.',
+            )
+          : t(
+              'Tick this once you have opened the firewall ports in your cloud — it turns the step green.',
+            )
+      }
     />
   );
 };
@@ -129,6 +137,9 @@ const OscSetup: FC = () => {
   const [peerPodsCm, peerPodsCmSettled] = usePeerPodsCm();
   const platform = useClusterPlatform();
   const [firewallOpened] = useFirewallOpened();
+  // The same resolution the firewall step itself uses, so the step and its "mark as done" hint
+  // cannot disagree about which cloud the user is on.
+  const peerPodsProvider = usePeerPodsProvider();
   // How the operator installs the runtime here — DaemonSet installs live, MachineConfig drains and
   // reboots. Same resolution the KataConfig wizard uses, so the two screens can't contradict each
   // other about rebooting (issue #58). undefined until known: say nothing rather than guess wrong.
@@ -208,7 +219,7 @@ const OscSetup: FC = () => {
       detail: (
         <>
           <OpenPeerPodsFirewall />
-          <FirewallDoneToggle opened={firewallOpened} />
+          <FirewallDoneToggle opened={firewallOpened} isGcp={peerPodsProvider === 'gcp'} />
         </>
       ),
     },

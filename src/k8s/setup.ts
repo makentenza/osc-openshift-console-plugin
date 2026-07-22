@@ -91,6 +91,21 @@ export const usePeerPodsCm = (): [ConfigMapKind | undefined, boolean] =>
   );
 
 /**
+ * The cloud the peer pods firewall step is about: what the cloud-api-adaptor is configured for
+ * (peer-pods-cm CLOUD_PROVIDER) when that exists, else the cluster's own platform. Lowercased, and
+ * defaulting to GCP, which is the only provider with an in-cluster apply flow.
+ *
+ * Shared so that every part of the step agrees on which cloud the user is on — the "mark as done"
+ * hint used to talk about GCP on an AWS cluster because it was the one piece that didn't ask
+ * (issue #63).
+ */
+export const usePeerPodsProvider = (): string => {
+  const [cm] = usePeerPodsCm();
+  const platform = useClusterPlatform();
+  return (cm?.data?.CLOUD_PROVIDER || platform || 'gcp').toLowerCase();
+};
+
+/**
  * Whether the user has marked the (manual) "open the peer pods firewall ports" step done — the
  * plugin can't detect a cloud firewall rule itself (especially AWS/Azure), so the acknowledgement
  * is recorded in the setup ConfigMap and reflected as a green check (issue #13). Returns
