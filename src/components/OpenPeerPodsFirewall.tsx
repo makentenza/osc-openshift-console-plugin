@@ -168,6 +168,11 @@ const OpenPeerPodsFirewall: FC = () => {
   const project = pp.GCP_PROJECT_ID || gcp.project;
   // gcloud --network wants the short name; both peer-pods-cm and gcp.network may be a full path.
   const network = basename(pp.GCP_NETWORK || gcp.network);
+  // What the rendered gcloud command still leaves for the user to fill in. Both come from the
+  // cluster, but neither is guaranteed to be there, and "Apply in cluster" needs both.
+  const gcpPlaceholders = [project ? '' : '<project_id>', network ? '' : '<network>'].filter(
+    Boolean,
+  );
   const usePublicIp = (pp.USE_PUBLIC_IP ?? '').toLowerCase() === 'true';
 
   // The cloud-api-adaptor reaches each pod VM from the worker node it runs on (hostNetwork), so
@@ -517,9 +522,13 @@ const OpenPeerPodsFirewall: FC = () => {
   return (
     <>
       <Content component="p" className="osc-openshift-console-plugin__muted">
-        {t(
-          'Allow the cluster to reach pod VMs on Compute Engine: open TCP 15150 (agent) and UDP 9000 (VXLAN tunnel) from your worker nodes. The command below is filled in from your cluster — no placeholders to edit.',
-        )}
+        {gcpPlaceholders.length === 0
+          ? t(
+              'Allow the cluster to reach pod VMs on Compute Engine: open TCP 15150 (agent) and UDP 9000 (VXLAN tunnel) from your worker nodes. The command below is filled in from your cluster — no placeholders to edit.',
+            )
+          : t(
+              'Allow the cluster to reach pod VMs on Compute Engine: open TCP 15150 (agent) and UDP 9000 (VXLAN tunnel) from your worker nodes. The command below is filled in from your cluster where it could be read — replace the marked values before running it.',
+            )}
       </Content>
       <ClipboardCopy
         isReadOnly
@@ -530,6 +539,22 @@ const OpenPeerPodsFirewall: FC = () => {
       >
         {command}
       </ClipboardCopy>
+
+      {/* The project and network are read from Infrastructure and the worker MachineSets. Neither is
+          guaranteed — a UPI install may have no MachineSets, and the watches may not have settled —
+          so name what is still a placeholder instead of promising there are none. */}
+      {gcpPlaceholders.length > 0 && (
+        <Alert
+          variant="warning"
+          isInline
+          isPlain
+          className="osc-openshift-console-plugin__mt"
+          title={t(
+            'Replace the placeholder value(s) before running: {{placeholders}}. The plugin could not read them from this cluster.',
+            { placeholders: gcpPlaceholders.join(', ') },
+          )}
+        />
+      )}
 
       {!rangesReady && (
         <Alert
@@ -603,6 +628,17 @@ const OpenPeerPodsFirewall: FC = () => {
             className="osc-openshift-console-plugin__mt"
             title={t(
               'This cluster uses manually-managed credentials (the Cloud Credential Operator is in Manual mode), so it can’t mint a credential. Run the command above with your own credentials instead.',
+            )}
+          />
+        ) : gcpPlaceholders.length > 0 ? (
+          // Apply needs the project and network too, and was previously disabled without saying so.
+          <Alert
+            variant="info"
+            isInline
+            isPlain
+            className="osc-openshift-console-plugin__mt"
+            title={t(
+              'Apply in cluster needs the project and network, which could not be read from this cluster. Fill them in above and run the command yourself.',
             )}
           />
         ) : (
